@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildBuildingGeometry } from '../src/buildings.js';
+import { buildBuildingGeometry, WALL_SAMPLE_INSET_M } from '../src/buildings.js';
 
 const meta = { size_m: [100, 100], heightmap: { min: 10 } };
 const fc = (...features) => ({ type: 'FeatureCollection', features });
@@ -36,10 +36,21 @@ for (const [name, ring] of [['CCW', sq(10, 20, 30, 40)], ['CW', sqCW(10, 20, 30,
         expect(stored[0] * (mid[0] - centre[0]) + stored[2] * (mid[2] - centre[2])).toBeGreaterThan(0); // and it points away from the centre
       });
     });
-    it('tiles the wall texture by metres and gives roofs planar imagery UVs', () => {
-      const uv = walls.getAttribute('uv');
-      expect(uv.getX(1)).toBeCloseTo(20 / 4);  // first 20 m edge spans 5 repeats
-      expect(Math.max(...uv.array)).toBeCloseTo(80 / 4); // u keeps running round the 80 m perimeter
+    it('colours walls from the imagery just inside the footprint edge, constant up each wall', () => {
+      const uv = walls.getAttribute('uv'), p = walls.getAttribute('position');
+      for (let q = 0; q < 4; q++) {
+        const k = q * 4;
+        expect([uv.getX(k), uv.getY(k)]).toEqual([uv.getX(k + 3), uv.getY(k + 3)]);     // top == bottom at each end
+        expect([uv.getX(k + 1), uv.getY(k + 1)]).toEqual([uv.getX(k + 2), uv.getY(k + 2)]);
+        for (const c of [0, 1]) { // bottom corners: world (x, _, -y)
+          const cx = p.getX(k + c), cy = -p.getZ(k + c);
+          const dx = uv.getX(k + c) * 100 - cx, dy = (1 - uv.getY(k + c)) * 100 - cy;
+          expect(Math.hypot(dx, dy)).toBeCloseTo(WALL_SAMPLE_INSET_M, 3);                // 0.75 m from the corner...
+          expect(dx * (20 - cx) + dy * (30 - cy)).toBeGreaterThan(0);                     // ...towards the footprint centre (20, 30)
+        }
+      }
+    });
+    it('gives roofs planar imagery UVs', () => {
       const ru = roofs.getAttribute('uv'), rp = roofs.getAttribute('position');
       for (let i = 0; i < rp.count; i++) { // u = x / width, v = 1 - y / height, with world x = x and world z = -y
         expect(ru.getX(i)).toBeCloseTo(rp.getX(i) / 100); expect(ru.getY(i)).toBeCloseTo(1 + rp.getZ(i) / 100);

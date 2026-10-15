@@ -2,7 +2,9 @@ import * as THREE from 'three';
 import { toWorld } from './coords.js';
 
 export const DEFAULT_HEIGHT_M = 6;
-export const WALL_TILE_M = 4; // one wall texture repeat covers 4 m x 4 m
+// Walls are coloured by the imagery just inside the footprint edge: sampling exactly on the edge often hits the
+// ground or a shadow, because aerial photos lean tall buildings away from their footprints.
+export const WALL_SAMPLE_INSET_M = 0.75;
 
 const signedArea = (ring) => ring.reduce((s, [x0, y0], i) => { const [x1, y1] = ring[(i + 1) % ring.length]; return s + (x0 * y1 - x1 * y0); }, 0) / 2;
 
@@ -16,8 +18,8 @@ function normaliseRings(rings) {
 
 /**
  * Extrudes every footprint from base_z to base_z + height.
- * Returns two non-indexed-by-building but merged geometries: `walls` (own quads per edge, flat normals, UVs tile the
- * wall texture) and `roofs` (flat caps with the same planar imagery UVs as the terrain, so roofs show the real roof pixels).
+ * Returns two merged geometries: `walls` (own quads per edge, flat normals; UVs point at the imagery pixels along the
+ * footprint edge, so each wall takes the colours of the satellite image it stands on) and `roofs` (flat caps with the same planar imagery UVs as the terrain, so roofs show the real roof pixels).
  */
 export function buildBuildingGeometry(meta, buildings) {
   const [W, H] = meta.size_m;
@@ -34,19 +36,20 @@ export function buildBuildingGeometry(meta, buildings) {
 
     // Walls: one quad per edge. With the outer ring CCW (and holes CW) the outward normal is (dy, -dx) in local x/y.
     for (const ring of rings) {
-      let run = 0;
       for (let i = 0; i < ring.length; i++) {
         const [x0, y0] = ring[i], [x1, y1] = ring[(i + 1) % ring.length];
         const len = Math.hypot(x1 - x0, y1 - y0);
         if (len < 1e-6) continue;
         const k = wp.length / 3;
         wp.push(...toWorld(meta, x0, y0, base), ...toWorld(meta, x1, y1, base), ...toWorld(meta, x1, y1, top), ...toWorld(meta, x0, y0, top));
-        const nx = (y1 - y0) / len, nz = (x1 - x0) / len; // world normal = (dy, 0, -(-dx)) with world Z = -y
+        const nx2 = (y1 - y0) / len, ny2 = -(x1 - x0) / len; // outward normal in local x/y
+        const nx = nx2, nz = -ny2; // world normal (world Z = -y)
         for (let n = 0; n < 4; n++) wn.push(nx, 0, nz);
-        const u0 = run / WALL_TILE_M, u1 = (run + len) / WALL_TILE_M, v1 = height / WALL_TILE_M;
-        wuv.push(u0, 0, u1, 0, u1, v1, u0, v1);
+        // Sample point per end: moved WALL_SAMPLE_INSET_M into the building (against the outward normal).
+        const sx = -nx2 * WALL_SAMPLE_INSET_M, sy = -ny2 * WALL_SAMPLE_INSET_M;
+        const a = [(x0 + sx) / W, 1 - (y0 + sy) / H], b = [(x1 + sx) / W, 1 - (y1 + sy) / H];
+        wuv.push(...a, ...b, ...b, ...a); // same UV top and bottom: colour is constant up each wall
         wi.push(k, k + 1, k + 2, k, k + 2, k + 3);
-        run += len;
       }
     }
 
@@ -77,31 +80,10 @@ export function buildBuildingGeometry(meta, buildings) {
   return { walls: make(wp, wn, wuv, wi), roofs: make(rp, rn, ruv, ri) };
 }
 
-/** Procedural stone/render wall texture (no art assets yet; textures by building type come in M5). */
-export function wallTexture(size = 128) {
-  const c = document.createElement('canvas'); c.width = c.height = size;
-  const g = c.getContext('2d');
-  g.fillStyle = '#c9b99a'; g.fillRect(0, 0, size, size);
-  const rows = 8, h = size / rows;
-  for (let r = 0; r < rows; r++) {
-    for (let col = 0; col < 4; col++) {
-      const w = size / 4, x = col * w + (r % 2 ? w / 2 : 0);
-      const shade = 0.88 + ((r * 7 + col * 13) % 10) / 45;
-      g.fillStyle = `rgb(${201 * shade | 0},${185 * shade | 0},${154 * shade | 0})`;
-      g.fillRect(x % size, r * h + 1, w - 2, h - 2);
-      if (x + w > size) g.fillRect(x - size, r * h + 1, w - 2, h - 2);
-    }
-  }
-  const tex = new THREE.CanvasTexture(c);
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
-}
-
 export function buildBuildings(meta, buildings, imageryTex) {
   const { walls, roofs } = buildBuildingGeometry(meta, buildings);
   const group = new THREE.Group(); group.name = 'buildings';
-  const wallMesh = new THREE.Mesh(walls, new THREE.MeshLambertMaterial({ map: wallTexture() }));
+  const wallMesh = new THREE.Mesh(walls, new THREE.MeshLambertMaterial({ map: imageryTex }));
   const roofMesh = new THREE.Mesh(roofs, new THREE.MeshBasicMaterial({ map: imageryTex, side: THREE.DoubleSide }));
   wallMesh.name = 'walls'; roofMesh.name = 'roofs';
   group.add(wallMesh, roofMesh);
