@@ -8,6 +8,7 @@ from pathlib import Path
 
 import numpy as np
 import rasterio
+import rasterio.enums
 import requests
 
 WCS_URL = "https://environment.data.gov.uk/spatialdata/lidar-composite-digital-terrain-model-dtm-1m-2022/wcs"
@@ -45,7 +46,26 @@ def _fetch_wcs(wcs_url, coverage_id, bbox, out):
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_bytes(resp.content)
+    _mask_outside_coverage(out)
     return out
+
+
+def _mask_outside_coverage(path):
+    """The WCS returns exact 0.0 (not nodata) outside EA coverage, e.g. all of Wales; flag those pixels as nodata.
+
+    Exactly 0.000 m is vanishingly rare in 1 m LiDAR, though a tidal flat at datum could lose a few pixels.
+    """
+    with rasterio.open(path) as ds:
+        data, profile = ds.read(1), ds.profile
+    nodata = profile.get("nodata")
+    if nodata is None:
+        nodata = profile["nodata"] = -9999.0
+    zeros = data == 0.0
+    if zeros.any():
+        data[zeros] = nodata
+        profile.update(compress="deflate")
+        with rasterio.open(path, "w", **profile) as dst:
+            dst.write(data, 1)
 
 
 def summarise(path):
@@ -70,3 +90,29 @@ if __name__ == "__main__":
     args = ap.parse_args()
     path = (fetch_dsm if args.dsm else fetch_dtm)(args.bbox, args.out)
     print(summarise(path))
+
+
+def dtm_from_files(paths, bbox, out, resolution=1.0):
+    """Mosaic user-downloaded GeoTIFF tiles (e.g. NRW LiDAR, which has no scriptable endpoint) and clip to `bbox`.
+
+    Pixels the tiles don't cover are left as nodata for `terrain_fill` to fill.
+    """
+    from rasterio.merge import merge
+
+    min_e, min_n, max_e, max_n = bbox
+    datasets = [rasterio.open(p) for p in paths]
+    try:
+        for ds in datasets:
+            if str(ds.crs) != "EPSG:27700":
+                raise ValueError(f"{ds.name} is {ds.crs}, expected EPSG:27700")
+        data, transform = merge(datasets, bounds=tuple(bbox), res=resolution, nodata=-9999.0,
+                                resampling=rasterio.enums.Resampling.bilinear)
+    finally:
+        for ds in datasets:
+            ds.close()
+    out = Path(out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with rasterio.open(out, "w", driver="GTiff", width=data.shape[2], height=data.shape[1], count=1, dtype="float32",
+                       crs="EPSG:27700", transform=transform, nodata=-9999.0, compress="deflate") as dst:
+        dst.write(data[0].astype("float32"), 1)
+    return out
