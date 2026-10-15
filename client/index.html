@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>civil-war</title>
+  <style>
+    body { font: 14px/1.4 system-ui, sans-serif; margin: 16px; background: #14161a; color: #e6e6e6; }
+    a { color: #8ab4f8; margin-right: 8px; } a.on { color: #fff; font-weight: 700; }
+    pre { background: #1d2026; padding: 12px; border-radius: 6px; overflow: auto; }
+    .row { display: flex; gap: 16px; flex-wrap: wrap; } canvas { max-width: 100%; image-rendering: pixelated; border: 1px solid #333; }
+    h1 { font-size: 18px; margin: 0 0 8px; }
+  </style>
+</head>
+<body>
+  <h1>civil-war bundle loader</h1>
+  <div id="areas"></div>
+  <pre id="summary">loading…</pre>
+  <div class="row"><canvas id="imagery"></canvas><canvas id="height"></canvas></div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
