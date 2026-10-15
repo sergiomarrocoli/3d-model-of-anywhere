@@ -61,6 +61,7 @@ def stubbed(tmp_path, monkeypatch):
     def fake_fetch_dtm(bbox, out):
         _tif(out, np.full((100, 100), -9999.0, dtype="float32"), nodata=-9999.0, e0=bbox[0], n0=bbox[1])
     monkeypatch.setattr(ba.dtm, "fetch_dtm", fake_fetch_dtm)
+    monkeypatch.setattr(ba.wales_lidar, "fetch_wales_lidar", lambda *a, **k: None)  # no Welsh tiles unless a test says so
     monkeypatch.setattr(ba.terrain_fill, "terrain50",
                         lambda bbox, cache=None: (np.full((20, 20), 50.0, dtype="float32"),
                                                   from_origin(bbox[0] - 300, bbox[3] + 300, 50, 50)))
@@ -102,3 +103,24 @@ def test_empty_area_still_writes_valid_bundle(stubbed, monkeypatch):
     s = ba.build_area(BBOX, "empty", tmp / "b", work_root=tmp / "w")
     meta, z, rgb, fc = load_bundle(s["bundle"])
     assert s["buildings"] == 0 and fc["features"] == [] and meta["buildings"]["count"] == 0
+
+
+def test_uses_welsh_lidar_with_dsm_when_ea_has_no_coverage(stubbed, monkeypatch):
+    tmp, _ = stubbed
+    from shapely.geometry import box
+    ground = np.full((100, 100), 100.0, dtype="float32")
+    roof = ground.copy(); roof[40:60, 40:60] += 9.0      # a 9 m building at local x/y 40-60
+
+    def fake_wales(bbox, out, kind="dtm", cache=None):
+        _tif(out, ground if kind == "dtm" else roof, nodata=-9999.0, e0=bbox[0], n0=bbox[1])
+        return out
+    monkeypatch.setattr(ba.wales_lidar, "fetch_wales_lidar", fake_wales)
+    oml = gpd.GeoDataFrame({"building": ["yes"], "osm_id": ["oml/0"]},
+                           geometry=[box(BBOX[0] + 40, BBOX[1] + 40, BBOX[0] + 60, BBOX[1] + 60)], crs="EPSG:27700")
+    monkeypatch.setattr(ba.omlocal, "fetch_omlocal_buildings", lambda bbox, out=None, cache=None: oml)
+    s = ba.build_area(BBOX, "w", tmp / "b", work_root=tmp / "w")
+    assert s["dtm_source"] == "Welsh Government LiDAR" and s["has_dsm"] is True and s["dtm_filled_pct"] == 0
+    assert s["height_sources"] == {"lidar": 1}
+    meta, z, _, fc = load_bundle(s["bundle"])
+    assert fc["features"][0]["properties"]["height"] == pytest.approx(9.0) and np.allclose(z, 100)
+    assert any("Welsh Government" in c for c in meta["attribution"])

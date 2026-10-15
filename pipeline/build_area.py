@@ -1,8 +1,8 @@
 """End-to-end pipeline: bbox in, tile bundle out (PLAN §3).
 
-DTM source, in order: --dtm-file tiles you supply (e.g. NRW LiDAR for Wales) -> EA LiDAR (England) ->
-OS Terrain 50 everywhere else. Gaps in any of them are filled from Terrain 50. Without a LiDAR DSM,
-building heights come from OSM tags, then the 6 m default.
+Terrain source, in order: --dtm-file tiles you supply -> EA LiDAR (England) -> Welsh Government LiDAR (Wales)
+-> OS Terrain 50 everywhere else. Gaps in any of them are filled from Terrain 50. EA and Welsh LiDAR also give a
+DSM, so building heights come from LiDAR; without a DSM they come from OSM tags, then the 6 m default.
 Buildings: OSM, falling back to OS Open Map Local when OSM has none in the box.
 """
 import argparse
@@ -14,7 +14,7 @@ import geopandas as gpd
 import numpy as np
 import rasterio
 
-from pipeline import bundle, buildings, clean, dtm, heights, base, imagery, omlocal, terrain_fill
+from pipeline import bundle, buildings, clean, dtm, heights, base, imagery, omlocal, terrain_fill, wales_lidar
 
 NRW_ATTRIBUTION = "Contains Natural Resources Wales information © Natural Resources Wales and database right (OGL v3)"
 
@@ -49,6 +49,12 @@ def build_area(bbox, area_id, out_dir="data/bundles", dtm_files=None, dtm_attrib
             dsm_path = w / "dsm.tif"
             dtm.fetch_dsm(bbox, dsm_path)
             if _valid_fraction(dsm_path) == 0:
+                dsm_path = None
+        elif wales_lidar.fetch_wales_lidar(bbox, raw_dtm, "dtm"):
+            dtm_source = "Welsh Government LiDAR"
+            credits.append(wales_lidar.ATTRIBUTION)
+            dsm_path = w / "dsm.tif"
+            if not wales_lidar.fetch_wales_lidar(bbox, dsm_path, "dsm") or _valid_fraction(dsm_path) == 0:
                 dsm_path = None
         else:
             dtm_source = "OS Terrain 50 only"
