@@ -92,14 +92,14 @@ describe('robustness', () => {
 });
 
 describe('wall brightness', () => {
-  it('multiplies the copied imagery by a 50% sRGB grey on walls only', () => {
+  it('multiplies the copied imagery by a 25% sRGB grey on walls only', () => {
     const tex = new THREE.Texture();
     const group = buildBuildings(meta, fc(poly([sq(0, 0, 4, 4)])), tex);
     const walls = group.getObjectByName('walls'), roofs = group.getObjectByName('roofs');
-    expect(WALL_BRIGHTNESS).toBe(0.5);
+    expect(WALL_BRIGHTNESS).toBe(0.25);
     expect(walls.material.map).toBe(tex);
     const { r, g, b } = walls.material.color.getRGB({ r: 0, g: 0, b: 0 }, THREE.SRGBColorSpace);
-    expect([r, g, b].map((v) => +v.toFixed(3))).toEqual([0.5, 0.5, 0.5]);
+    expect([r, g, b].map((v) => +v.toFixed(3))).toEqual([0.25, 0.25, 0.25]);
     expect(roofs.material.color.getHex()).toBe(0xffffff); // roofs untouched
   });
 });
