@@ -43,6 +43,14 @@ def osm_height(height, levels):
     return n * LEVEL_HEIGHT_M if n > 0 else None
 
 
+def footprint_values(geom, array, transform, shape):
+    """Finite raster values whose pixel centres fall inside `geom` (any touched pixel if none do)."""
+    vals = array[~geometry_mask([geom], shape, transform, all_touched=False)]
+    if vals.size == 0:  # footprint smaller than a pixel centre
+        vals = array[~geometry_mask([geom], shape, transform, all_touched=True)]
+    return vals[np.isfinite(vals)]
+
+
 def lidar_heights(geoms, dtm_path, dsm_path):
     """90th percentile of nDSM = DSM - DTM inside each footprint (NaN where there is no valid data)."""
     with rasterio.open(dtm_path) as dtm, rasterio.open(dsm_path) as dsm:
@@ -52,10 +60,7 @@ def lidar_heights(geoms, dtm_path, dsm_path):
         transform, shape = dtm.transform, dtm.shape
     out = []
     for g in geoms:
-        vals = ndsm[~geometry_mask([g], shape, transform, all_touched=False)]
-        if vals.size == 0:  # footprint smaller than a pixel centre: take any touched pixel
-            vals = ndsm[~geometry_mask([g], shape, transform, all_touched=True)]
-        vals = vals[np.isfinite(vals)]
+        vals = footprint_values(g, ndsm, transform, shape)
         out.append(float(np.percentile(vals, 90)) if vals.size else np.nan)
     return np.array(out)
 
