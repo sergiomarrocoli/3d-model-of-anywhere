@@ -4,3 +4,4 @@ requests
 geopandas
 shapely
 pyproj
+pillow
