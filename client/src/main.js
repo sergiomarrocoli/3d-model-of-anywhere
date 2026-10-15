@@ -1,49 +1,49 @@
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { loadBundle } from './bundle.js';
+import { buildTerrain } from './terrain.js';
+import { zRef } from './coords.js';
 
 const $ = (id) => document.getElementById(id);
+const params = new URLSearchParams(location.search);
 
 async function main() {
   const areas = await (await fetch('/bundles/index.json')).json();
   if (!areas.length) throw new Error('no bundles found; run build_area.py first');
-  const area = new URLSearchParams(location.search).get('area') ?? areas[0];
-  $('areas').innerHTML = areas.map((a) => `<a href="?area=${a}"${a === area ? ' class="on"' : ''}>${a}</a>`).join(' ');
+  const area = params.get('area') ?? areas[0];
+  $('areas').innerHTML = areas.map((a) => `<a href="?area=${a}"${a === area ? ' class="on"' : ''}>${a}</a>`).join(' ') + ' <a href="?debug&area=' + area + '">debug</a>';
+  if (params.has('debug')) { document.body.classList.add('debug'); return (await import('./debug.js')).debugMain(); }
 
-  const t0 = performance.now();
-  const { meta, heightmap, imagery, buildings } = await loadBundle(`/bundles/area_${area}`);
-  const ms = Math.round(performance.now() - t0);
+  const bundle = await loadBundle(`/bundles/area_${area}`);
+  const { meta, heightmap, imagery } = bundle;
+  $('credits').textContent = meta.attribution.join(' · ');
 
-  let zmin = Infinity, zmax = -Infinity;
-  for (const v of heightmap.data) { if (v < zmin) zmin = v; if (v > zmax) zmax = v; }
-  const heights = buildings.features.map((f) => f.properties.height);
-  $('summary').textContent = [
-    `area:       ${meta.id}  (${meta.size_m[0]} x ${meta.size_m[1]} m, ${meta.crs})`,
-    `origin:     E ${meta.origin[0]}, N ${meta.origin[1]}`,
-    `heightmap:  ${heightmap.width} x ${heightmap.height} @ ${heightmap.resolution} m, ${zmin.toFixed(1)}..${zmax.toFixed(1)} m`,
-    `imagery:    ${imagery.width} x ${imagery.height}`,
-    `buildings:  ${buildings.features.length}, heights ${Math.min(...heights).toFixed(1)}..${Math.max(...heights).toFixed(1)} m`,
-    `loaded in ${ms} ms`,
-    '', 'credits:', ...meta.attribution.map((a) => `  ${a}`),
-  ].join('\n');
+  const canvas = $('scene');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x14161a);
+  const terrain = buildTerrain(meta, heightmap, imagery, renderer);
+  scene.add(terrain);
 
-  // Debug previews: imagery with building outlines, and heightmap as greyscale.
-  const S = 480;
-  const c1 = $('imagery'); c1.width = c1.height = S;
-  const g1 = c1.getContext('2d');
-  g1.drawImage(imagery, 0, 0, S, S);
-  g1.strokeStyle = 'red'; g1.lineWidth = 1;
-  const k = S / meta.size_m[0];
-  for (const f of buildings.features) {
-    g1.beginPath();
-    f.geometry.coordinates[0].forEach(([x, y], i) => (i ? g1.lineTo(x * k, S - y * k) : g1.moveTo(x * k, S - y * k)));
-    g1.stroke();
-  }
-  const c2 = $('height'); c2.width = heightmap.width; c2.height = heightmap.height;
-  const g2 = c2.getContext('2d');
-  const px = g2.createImageData(heightmap.width, heightmap.height);
-  heightmap.data.forEach((v, i) => { const g = ((v - zmin) / (zmax - zmin || 1)) * 255; px.data.set([g, g, g, 255], i * 4); });
-  g2.putImageData(px, 0, 0);
+  // Temporary orbit camera so the terrain can be inspected; #14 replaces it with a free-fly camera.
+  const [W, H] = meta.size_m;
+  const camera = new THREE.PerspectiveCamera(50, 1, 1, 5000);
+  const centre = new THREE.Vector3(W / 2, 0, -H / 2);
+  camera.position.set(W * 0.5, W * 0.75, W * 0.45);
+  const controls = new OrbitControls(camera, canvas);
+  controls.target.copy(centre);
+  controls.update();
+
+  const resize = () => {
+    const w = innerWidth, h = innerHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h; camera.updateProjectionMatrix();
+  };
+  addEventListener('resize', resize); resize();
+  renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+  window.__app = { THREE, scene, camera, renderer, controls, meta, zRef: zRef(meta) };
   document.title = `civil-war: ${meta.id}`;
-  window.__bundle = { meta, heightmap, buildings }; // for console poking
 }
 
-main().catch((e) => { $('summary').textContent = `Error: ${e.message}`; console.error(e); });
+main().catch((e) => { $('credits').textContent = `Error: ${e.message}`; console.error(e); });
