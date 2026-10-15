@@ -6,3 +6,4 @@ shapely
 pyproj
 pillow
 matplotlib
+pytest
