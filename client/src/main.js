@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { loadBundle } from './bundle.js';
 import { buildTerrain } from './terrain.js';
+import { buildBuildings } from './buildings.js';
 import { zRef } from './coords.js';
 
 const $ = (id) => document.getElementById(id);
@@ -15,7 +16,7 @@ async function main() {
   if (params.has('debug')) { document.body.classList.add('debug'); return (await import('./debug.js')).debugMain(); }
 
   const bundle = await loadBundle(`/bundles/area_${area}`);
-  const { meta, heightmap, imagery } = bundle;
+  const { meta, heightmap, imagery, buildings } = bundle;
   $('credits').textContent = meta.attribution.join(' · ');
 
   const canvas = $('scene');
@@ -25,6 +26,13 @@ async function main() {
   scene.background = new THREE.Color(0x14161a);
   const terrain = buildTerrain(meta, heightmap, imagery, renderer);
   scene.add(terrain);
+  scene.add(buildBuildings(meta, buildings, terrain.material.map)); // roofs share the terrain's imagery texture
+
+  // Only the wall material is lit (the imagery already has baked shadows); #14 finalises lighting.
+  scene.add(new THREE.AmbientLight(0xffffff, 1.4));
+  const sun = new THREE.DirectionalLight(0xfff2dd, 1.8);
+  sun.position.set(-200, 300, 150);
+  scene.add(sun);
 
   // Temporary orbit camera so the terrain can be inspected; #14 replaces it with a free-fly camera.
   const [W, H] = meta.size_m;
