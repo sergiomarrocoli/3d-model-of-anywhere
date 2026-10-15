@@ -65,9 +65,10 @@ def lidar_heights(geoms, dtm_path, dsm_path):
     return np.array(out)
 
 
-def assign_heights(gdf, dtm_path, dsm_path):
+def assign_heights(gdf, dtm_path, dsm_path=None):
+    """`dsm_path=None` skips the LiDAR step (no surface model for the area), leaving OSM tags then the default."""
     out = gdf.copy()
-    lidar = lidar_heights(out.geometry, dtm_path, dsm_path)
+    lidar = lidar_heights(out.geometry, dtm_path, dsm_path) if dsm_path else np.full(len(out), np.nan)
     heights, sources = [], []
     for i, (_, row) in enumerate(out.iterrows()):
         l = lidar[i]
