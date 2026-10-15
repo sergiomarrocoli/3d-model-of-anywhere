@@ -5,6 +5,9 @@ export const DEFAULT_HEIGHT_M = 6;
 // Walls are coloured by the imagery just inside the footprint edge: sampling exactly on the edge often hits the
 // ground or a shadow, because aerial photos lean tall buildings away from their footprints.
 export const WALL_SAMPLE_INSET_M = 0.75;
+// Walls are drawn at half the brightness of the imagery they copy, so they read as shaded verticals next to the roofs.
+// Set as an sRGB grey, so it halves the displayed pixel values (a linear 0.5 would look much darker).
+export const WALL_BRIGHTNESS = 0.5;
 
 const signedArea = (ring) => ring.reduce((s, [x0, y0], i) => { const [x1, y1] = ring[(i + 1) % ring.length]; return s + (x0 * y1 - x1 * y0); }, 0) / 2;
 
@@ -83,7 +86,7 @@ export function buildBuildingGeometry(meta, buildings) {
 export function buildBuildings(meta, buildings, imageryTex) {
   const { walls, roofs } = buildBuildingGeometry(meta, buildings);
   const group = new THREE.Group(); group.name = 'buildings';
-  const wallMesh = new THREE.Mesh(walls, new THREE.MeshLambertMaterial({ map: imageryTex }));
+  const wallMesh = new THREE.Mesh(walls, new THREE.MeshLambertMaterial({ map: imageryTex, color: new THREE.Color().setRGB(WALL_BRIGHTNESS, WALL_BRIGHTNESS, WALL_BRIGHTNESS, THREE.SRGBColorSpace) }));
   const roofMesh = new THREE.Mesh(roofs, new THREE.MeshBasicMaterial({ map: imageryTex, side: THREE.DoubleSide }));
   wallMesh.name = 'walls'; roofMesh.name = 'roofs';
   group.add(wallMesh, roofMesh);
