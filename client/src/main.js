@@ -6,7 +6,7 @@ import { createFlyCamera } from './flycam.js';
 import { createGameCamera } from './gamecam.js';
 import { sampleHeight } from './heightmap.js';
 import { rayHeightfield, stepPlayer } from './player.js';
-import { edgeFade, clampToBox } from './edge.js';
+import { clampToBox } from './edge.js';
 import { resolveSlope, speedFactor } from './slope.js';
 import { buildCollisionGrid, resolveCircle, insideBuilding } from './collision.js';
 import { zRef } from './coords.js';
