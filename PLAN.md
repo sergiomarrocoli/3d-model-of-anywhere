@@ -123,7 +123,7 @@ Rotation stays fixed, which keeps it readable and true to the reference games. A
 ### Player
 
 - The character is a capsule or a billboard sprite with 8-direction animation (the Cannon Fodder look).
-- Movement is WASD with velocity smoothing.
+- Movement is click-to-move, Cannon Fodder style: click the ground and the player walks to that point, with velocity smoothing (accelerate, brake to arrive at rest, turn to face travel). The click is resolved by marching the camera ray against the heightmap.
 - **Ground following:** sample the heightmap with bilinear interpolation at the player's XY each frame.
 - **Collision:** 2D only, as circle-versus-polygon against the building footprints using a spatial grid or R-tree. No physics engine is needed for the prototype.
 - Slopes over a threshold, worked out from the heightmap gradient, block movement. This stops the player walking up cliffs.
