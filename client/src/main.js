@@ -2,11 +2,13 @@
 // only through the flow context (see flow.js), so another module can be slotted in between.
 //   modules/picker    pick   choose an area on an open map                        -> ctx.bbox
 //   modules/builder   build  ask the build service for it and wait                -> ctx.area, ctx.bundleUrl
+//   modules/credits   a Credits button and overlay listing the sources the area used (used by play)
 //   (a track drawer, say, could go here: reads ctx.area / ctx.bbox, adds ctx.overlay)
 //   play              load the map (modules/map), run the game (modules/walker), friends (modules/presence)
 // URLs: /  plays the default area;  ?area=<id>  plays that one;  ?pick  is ?flow=pick,build,play;  ?flow=a,b,c  runs steps a, b, c.
 import * as THREE from 'three';
 import { buildStep } from '@builder';
+import { mountCredits } from '@credits';
 import { createFlyCamera, debugMain, listMaps, loadMap } from '@map';
 import { startPresence } from '@presence';
 import { startWalker } from '@walker';
@@ -25,7 +27,7 @@ async function playGame({ area, overlay = null }) {
 
   const map = await loadMap(`/bundles/area_${area}`, { renderer });
   scene.add(map.object);
-  $('credits').textContent = map.attribution.join(' · ');
+  mountCredits($('credits'), map.attribution);
   const [W, D] = map.size;
 
   let camera, setAspect, step, walker = null, presence = null;
