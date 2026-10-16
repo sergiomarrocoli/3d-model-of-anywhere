@@ -80,4 +80,9 @@ async function main() {
   await runFlow(names, registry, params.has('area') ? { area } : {}, () => { const root = $('flow'); root.hidden = false; root.innerHTML = ''; root.className = ''; return { root, signal: ctl.signal }; });
 }
 
-main().catch((e) => { document.body.classList.remove('flow'); $('flow').hidden = true; $('credits').textContent = e instanceof FlowError ? `Flow: ${e.message}` : `Error: ${e.message}`; console.error(e); });
+main().catch((e) => {
+  document.body.classList.remove('flow'); $('flow').hidden = true;
+  const text = e instanceof FlowError ? `Flow: ${e.message}` : `Error: ${e.message}`;
+  $('credits').textContent = text; $('error').textContent = text; $('error').hidden = false;   // in the middle of the screen, not just the footer
+  console.error(e);
+});

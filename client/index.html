@@ -11,6 +11,8 @@
     #players { position: fixed; top: 8px; right: 12px; text-align: right; text-shadow: 0 0 4px #000; font-size: 12px; max-width: 45vw; }
     #players .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: baseline; }
     #players button { font: inherit; font-size: 11px; margin-left: 6px; }
+    #error { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 24px; font-size: 16px; color: #f0b429; pointer-events: none; }
+    #error[hidden] { display: none; }
     #credits { position: fixed; bottom: 6px; left: 12px; right: 12px; font-size: 11px; text-shadow: 0 0 4px #000; }
     #credits .credits-text { opacity: .8; }
     a { color: #8ab4f8; margin-right: 8px; } a.on { color: #fff; font-weight: 700; }
@@ -25,6 +27,7 @@
   <canvas id="scene"></canvas>
   <div id="hud"><div id="areas"></div></div>
   <div id="players" hidden></div>
+  <div id="error" hidden></div>
   <div id="credits"></div>
   <pre id="summary" hidden></pre>
   <div class="row" id="dbgrow" hidden><canvas id="imagery" class="dbg"></canvas><canvas id="height" class="dbg"></canvas></div>
