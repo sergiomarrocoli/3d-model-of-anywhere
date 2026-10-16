@@ -78,19 +78,19 @@ async function main() {
     marker.renderOrder = 10; marker.visible = false;
     scene.add(player, marker);
 
-    // Camera controls: wheel / pinch zooms (any distance); right-drag, Alt+wheel or a trackpad two-finger slide tilts.
+    // Camera controls: wheel / pinch zooms (any distance); right-drag or a trackpad two-finger slide tilts (up/down) and rotates around the player (left/right); Alt+wheel tilts.
     // Mouse wheels and trackpad slides both arrive as wheel events; pinch has ctrlKey set and plain mouse wheels
     // come as big whole-number steps, so anything else is treated as a trackpad slide.
     const isMouseWheel = (e) => e.deltaMode !== 0 || (e.deltaX === 0 && Number.isInteger(e.deltaY) && Math.abs(e.deltaY) >= 50);
     canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
       if (e.ctrlKey || (isMouseWheel(e) && !e.altKey)) game.zoomBy(Math.exp(e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)));
-      else game.tiltBy(-e.deltaY * 0.15);
+      else { game.tiltBy(-e.deltaY * 0.15); game.yawBy(e.deltaX * 0.15); }
     }, { passive: false });
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     let tilting = null;
-    canvas.addEventListener('pointerdown', (e) => { if (e.button === 2) { tilting = e.clientY; canvas.setPointerCapture(e.pointerId); } });
-    canvas.addEventListener('pointermove', (e) => { if (tilting !== null) { game.tiltBy((e.clientY - tilting) * 0.3); tilting = e.clientY; } });
+    canvas.addEventListener('pointerdown', (e) => { if (e.button === 2) { tilting = { x: e.clientX, y: e.clientY }; canvas.setPointerCapture(e.pointerId); } });
+    canvas.addEventListener('pointermove', (e) => { if (tilting !== null) { game.tiltBy((e.clientY - tilting.y) * 0.3); game.yawBy(-(e.clientX - tilting.x) * 0.3); tilting = { x: e.clientX, y: e.clientY }; } });
     canvas.addEventListener('pointerup', (e) => { if (e.button === 2) tilting = null; });
 
     // Click-to-move (Cannon Fodder style): a click that was not a drag sets the walk target on the terrain.
