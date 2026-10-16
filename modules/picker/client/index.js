@@ -7,7 +7,7 @@ import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'; // MapLibre
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './picker.css';
 import { fromBNG, insideGB, toBNG } from './bng.js';
-import { HANDLES, boxBBox, boxCentre, boxCorners, boxSize, buildCommand, DEFAULT_SIZE_M, handleCursor, handlePosition, makeBox, MAX_SIZE_M, MIN_SIZE_M, moveBox, resizeBox } from './box.js';
+import { HANDLES, boxBBox, boxCentre, boxCorners, boxSize, buildCommand, DEFAULT_SIZE_M, handleCursor, handlePosition, makeBox, MAX_SIZE_M, MIN_SIZE_M, moveBox, recentreBox, resizeBox } from './box.js';
 import { geocode } from './geocode.js';
 
 export { DEFAULT_SIZE_M, MAX_SIZE_M, MIN_SIZE_M } from './box.js';
@@ -31,7 +31,7 @@ const polygon = (box) => ({ type: 'FeatureCollection', features: [{ type: 'Featu
  * @param {object} [o.box]                start box in grid metres (default 1 km around the centre)
  * @param {number} [o.zoom]
  * @param {(box:object)=>void} [o.onChange]     fires whenever the box moves or resizes
- * @returns {{ map, getBox(), setBox(box), flyTo(lon, lat), destroy() }}
+ * @returns {{ map, getBox(), setBox(box), centreOnView(), flyTo(lon, lat), destroy() }}
  */
 export function createPicker({ container, centre = START, box = null, zoom = 14, onChange = () => {} }) {
   let current = box ?? makeBox(toBNG(centre.lon, centre.lat), DEFAULT_SIZE_M);
@@ -86,12 +86,22 @@ export function createPicker({ container, centre = START, box = null, zoom = 14,
     const start = current, [E0, N0] = pointerToGrid(e);
     startDrag(e, canvas, ([E, N]) => set(moveBox(start, E - E0, N - N0)));
   }, true);
+  // Click the map (not a drag) to put the box there, keeping its size, so after panning away you can bring it along.
+  // Clicks on the box itself, and the end of a handle drag, do not count.
+  map.doubleClickZoom.disable();
+  map.on('click', (e) => {
+    if (e.originalEvent.target.closest?.('.picker-handle')) return;
+    if (map.getLayer('box-fill') && map.queryRenderedFeatures(e.point, { layers: ['box-fill'] }).length) return;
+    set(recentreBox(current, toBNG(e.lngLat.lng, e.lngLat.lat)));
+  });
+  const centreOnView = () => { const c = map.getCenter(); set(recentreBox(current, toBNG(c.lng, c.lat))); };
   map.on('mousemove', (e) => { canvas.style.cursor = map.getLayer('box-fill') && map.queryRenderedFeatures(e.point, { layers: ['box-fill'] }).length ? 'move' : ''; });
 
   return {
     map,
     getBox: () => current,
     setBox: set,
+    centreOnView,
     flyTo: (lon, lat, z = 14) => map.flyTo({ center: [lon, lat], zoom: z }),
     destroy: () => map.remove(),
   };
@@ -112,13 +122,14 @@ export function mountPickerPage(root, { onBuild = null, initial = null } = {}) {
       <h2>Pick an area</h2>
       <form data-search class="row"><input type="text" placeholder="postcode or place" aria-label="search" /><button type="submit" class="secondary">Go</button></form>
       <div data-msg class="hint"></div>
+      <button type="button" class="secondary" data-here>Move the box to the middle of the map</button>
       <div class="stat" data-size></div>
       <div class="stat" data-grid></div>
       <div class="warn" data-warn hidden>This box is outside the Ordnance Survey grid (Great Britain). The data sources only cover Great Britain.</div>
       <div class="row"><button data-build>Build this area</button></div>
       <div class="hint" data-buildmsg></div>
       <details><summary class="hint">Build it from the command line</summary><code data-cmd></code><button class="secondary" data-copy style="margin-top:6px">Copy</button></details>
-      <div class="hint">Drag the box to move it, drag its handles to resize it (${MIN_SIZE_M / 1000} to ${MAX_SIZE_M / 1000} km a side). The box follows the Ordnance Survey grid, which is why it can look slightly turned against the map.</div>
+      <div class="hint">Drag the box to move it, click the map to put it there, drag its handles to resize it (${MIN_SIZE_M / 1000} to ${MAX_SIZE_M / 1000} km a side). The box follows the Ordnance Survey grid, which is why it can look slightly turned against the map.</div>
     </div>`;
   const $ = (s) => root.querySelector(s);
   let saved = initial;
@@ -136,6 +147,7 @@ export function mountPickerPage(root, { onBuild = null, initial = null } = {}) {
     },
   });
   $('[data-buildmsg]').textContent = onBuild ? '' : 'The Build button arrives with the build service; for now copy the command below.';
+  $('[data-here]').onclick = () => picker.centreOnView();
   $('[data-build]').onclick = () => onBuild?.(picker.getBox());
   $('[data-copy]').onclick = () => navigator.clipboard?.writeText($('[data-cmd]').textContent);
   $('[data-search]').onsubmit = async (e) => {

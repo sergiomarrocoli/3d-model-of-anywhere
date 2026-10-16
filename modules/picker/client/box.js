@@ -19,6 +19,9 @@ export const boxCorners = (b) => [[b.minE, b.minN], [b.maxE, b.minN], [b.maxE, b
 
 export const moveBox = (b, dE, dN) => ({ minE: b.minE + dE, minN: b.minN + dN, maxE: b.maxE + dE, maxN: b.maxN + dN });
 
+/** The same box moved so its centre is at [E, N]. */
+export const recentreBox = (b, [E, N]) => { const { width, height } = boxSize(b); return { minE: E - width / 2, minN: N - height / 2, maxE: E + width / 2, maxN: N + height / 2 }; };
+
 /** Where each handle sits on the box: [E, N]. */
 export function handlePosition(b, handle) {
   const [cE, cN] = boxCentre(b);

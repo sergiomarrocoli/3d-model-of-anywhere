@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { HANDLES, MAX_SIZE_M, MIN_SIZE_M, boxBBox, boxCentre, boxSize, buildCommand, handlePosition, makeBox, moveBox, resizeBox } from '../box.js';
+import { HANDLES, MAX_SIZE_M, MIN_SIZE_M, boxBBox, boxCentre, boxSize, buildCommand, handlePosition, makeBox, moveBox, recentreBox, resizeBox } from '../box.js';
 
 const b = makeBox([310950, 291380], 1000);
 
@@ -12,6 +12,13 @@ describe('box', () => {
   it('moveBox keeps the size', () => {
     const m = moveBox(b, 50, -30);
     expect(boxSize(m)).toEqual(boxSize(b)); expect(boxCentre(m)).toEqual([311000, 291350]);
+  });
+  it('recentreBox puts the centre at the point and keeps width and height (also for a rectangle)', () => {
+    const r = recentreBox(b, [500000, 250000]);
+    expect(boxCentre(r)).toEqual([500000, 250000]); expect(boxSize(r)).toEqual(boxSize(b));
+    const rect = resizeBox(b, 'e', 311950, 0), r2 = recentreBox(rect, [1000, 2000]);
+    expect(boxSize(r2)).toEqual({ width: 1500, height: 1000 }); expect(boxCentre(r2)).toEqual([1000, 2000]);
+    expect(recentreBox(b, boxCentre(b))).toEqual(b);
   });
   it('handles sit on the corners, edge midpoints', () => {
     expect(handlePosition(b, 'ne')).toEqual([311450, 291880]); expect(handlePosition(b, 'sw')).toEqual([310450, 290880]);
