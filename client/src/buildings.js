@@ -12,7 +12,7 @@ export const WALL_BRIGHTNESS = 0.75;
 
 // Pitched roofs (when the bundle has a surfacemap): roof/wall-top heights come from the LiDAR DSM.
 export const ROOF_GRID_M = 2;          // roofs are refined until no edge is longer than this
-export const ROOF_INSET_M = 0.75;      // near the footprint edge the DSM is read this far inside, so eaves are not read off the ground
+export const ROOF_INSET_M = 1.5;       // within this distance of the footprint edge the DSM is read on this inset line, so the roof edge is crisp (walls drop vertically from it) and not smeared with the ground or a neighbour
 export const MIN_ROOF_ABOVE_BASE_M = 2;
 const MAX_REFINE_PASSES = 10;
 
