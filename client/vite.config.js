@@ -29,11 +29,14 @@ function bundlesPlugin() {
 }
 
 // In dev, /ws goes to the game server (`npm start` in ../server) so friends can share a room; without it the game is single player.
-// Feature modules live in ../modules/<name>/ (client/ and server/ halves). They are imported by alias, and three.js is
-// resolved from this project so a module does not need its own copy.
+// Feature modules live in ../modules/<name>/ (a client/ half, and for some a server/ half). They are imported by alias
+// (@map, @walker, @presence), and three.js / fast-png are resolved from this project so a module needs no copy of them.
 export default defineConfig({
   plugins: [bundlesPlugin()],
-  resolve: { alias: { '@presence': path.join(modulesDir, 'presence/client/index.js') }, dedupe: ['three'] },
+  resolve: {
+    alias: Object.fromEntries(['map', 'walker', 'presence'].map((m) => [`@${m}`, path.join(modulesDir, m, 'client/index.js')])),
+    dedupe: ['three', 'fast-png'],
+  },
   // In dev, /ws goes to the presence server (`npm start` in ../modules/presence/server); without it the game is single player.
   server: { fs: { allow: ['..'] }, proxy: { '/ws': { target: 'ws://localhost:8787', ws: true, changeOrigin: true } } },
   test: { include: ['test/**/*.test.js', '../modules/*/client/test/**/*.test.js'] },

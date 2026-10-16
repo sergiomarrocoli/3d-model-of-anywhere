@@ -66,6 +66,10 @@ This is the hardest source to get. At this camera height you need roughly **25�
 └─────────────────┘            └──────────────────────┘                └────────────────┘
 ```
 
+### Modules
+
+The game is split into modules in `modules/` (`map`, `walker`, `presence`, more to come) that a thin shell in `client/` plugs together; each has a `client/` half, optionally a `server/` half, its own tests and a README. See `modules/README.md`. Planned: an area picker, a builder service, a track drawer and a racing game module.
+
 ### Stack
 
 - **Area picker:** a web page with MapLibre GL and a draggable fixed-size box, which posts the bbox to the pipeline.

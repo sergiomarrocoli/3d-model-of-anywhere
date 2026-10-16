@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { sampleHeight } from '../src/heightmap.js';
-import { buildTerrainGeometry } from '../src/terrain.js';
-import { toWorld } from '../src/coords.js';
+import { sampleHeight } from '../heightmap.js';
+import { buildTerrainGeometry } from '../terrain.js';
+import { toWorld } from '../coords.js';
 
 // 4x4 m box, 1 m cells. Elevation = 10 + col (rises to the east) + 100 * (north-ness): row 0 is north.
 const W = 4, H = 4;
