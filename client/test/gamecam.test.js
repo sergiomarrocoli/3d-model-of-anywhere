@@ -53,11 +53,31 @@ describe('game camera', () => {
     const g = createGameCamera({ aspect: 1.5 });
     const t = new THREE.Vector3(10, 2, -10); g.follow(t);
     g.tiltBy(-1000); expect(g.state.tiltDeg).toBe(MIN_TILT_DEG);
-    g.tiltBy(1000); expect(g.state.tiltDeg).toBe(MAX_TILT_DEG);
-    g.tiltBy(-30); expect(g.state.tiltDeg).toBe(60);
+    g.tiltBy(1000); expect(g.state.tiltDeg).toBe(MAX_TILT_DEG); // 89
+    g.tiltBy(-29); expect(g.state.tiltDeg).toBe(60);
     cam(g.camera);
     const ndc = t.clone().project(g.camera);
     expect(Math.abs(ndc.x)).toBeLessThan(1e-6); expect(Math.abs(ndc.y)).toBeLessThan(1e-6);
     expect(new THREE.Vector3(10, 2, -20).project(g.camera).y).toBeGreaterThan(0);
+  });
+
+  it('yaw orbits the camera around the target: keeps it centred, changes the compass direction, wraps', () => {
+    const g = createGameCamera({ aspect: 1.5, viewWidth: 50 });
+    const t = new THREE.Vector3(10, 2, -10); g.follow(t);
+    g.yawBy(90);                       // camera now east of the target, looking west
+    cam(g.camera);
+    expect(g.camera.position.x).toBeGreaterThan(t.x + 1);
+    expect(Math.abs(g.camera.position.z - t.z)).toBeLessThan(1e-6);
+    const ndc = t.clone().project(g.camera);
+    expect(Math.abs(ndc.x)).toBeLessThan(1e-6); expect(Math.abs(ndc.y)).toBeLessThan(1e-6);
+    expect(new THREE.Vector3(-10, 2, -10).project(g.camera).y).toBeGreaterThan(0);   // west is now up the screen
+    g.yawBy(-450); expect(g.state.yawDeg).toBeCloseTo(0);                              // 90 - 450 = -360 -> 0
+    g.yawBy(-10); expect(g.state.yawDeg).toBeCloseTo(350);
+  });
+  it('rotation survives zoom, tilt and following', () => {
+    const g = createGameCamera();
+    g.yawBy(45); const q = g.camera.quaternion.clone();
+    g.zoomBy(2); g.follow(new THREE.Vector3(500, 0, -500));
+    expect(g.camera.quaternion.angleTo(q)).toBeLessThan(1e-6);
   });
 });
