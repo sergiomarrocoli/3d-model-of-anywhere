@@ -5,6 +5,7 @@ import { buildBuildings } from './buildings.js';
 import { createFlyCamera } from './flycam.js';
 import { createGameCamera } from './gamecam.js';
 import { sampleHeight } from './heightmap.js';
+import { rayHeightfield, stepPlayer } from './player.js';
 import { zRef } from './coords.js';
 
 const $ = (id) => document.getElementById(id);
@@ -57,10 +58,37 @@ async function main() {
     const game = createGameCamera();
     camera = game.camera;
     player = new THREE.Mesh(new THREE.CapsuleGeometry(0.4, 1.0, 4, 12), new THREE.MeshLambertMaterial({ color: 0xe03030 }));
-    const place = (x, y) => player.position.set(x, sampleHeight(heightmap, x, y) - ref + 0.9, -y);
-    place(W / 2, H / 2);
-    scene.add(player);
-    tick = () => game.follow(player.position);
+    const nose = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.5), new THREE.MeshLambertMaterial({ color: 0xffffff }));
+    nose.position.set(0, 0.4, 0.5); player.add(nose); // shows which way the player faces (+Z at heading 0)
+    const groundY = (x, z) => sampleHeight(heightmap, x, -z) - ref; // world X/Z -> ground height (Y)
+    const me = { x: W / 2, z: -H / 2, vx: 0, vz: 0, heading: 0 };
+    let target = null;
+    const marker = new THREE.Mesh(new THREE.RingGeometry(0.5, 0.7, 24).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: 0xffd23f, depthTest: false, transparent: true }));
+    marker.renderOrder = 10; marker.visible = false;
+    scene.add(player, marker);
+
+    // Click-to-move (Cannon Fodder style): a click that was not a drag sets the walk target on the terrain.
+    const ray = new THREE.Raycaster();
+    let down = null;
+    canvas.addEventListener('pointerdown', (e) => { down = { x: e.clientX, y: e.clientY }; });
+    canvas.addEventListener('pointerup', (e) => {
+      if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 5) return;
+      ray.setFromCamera(new THREE.Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1), camera);
+      const hit = rayHeightfield(ray.ray.origin, ray.ray.direction, groundY, { step: 2 });
+      if (!hit) return;
+      target = { x: Math.min(Math.max(hit.x, 0), W), z: Math.min(Math.max(hit.z, -H), 0) };
+      marker.position.set(target.x, groundY(target.x, target.z) + 0.15, target.z);
+      marker.visible = true;
+    });
+
+    tick = (dt) => {
+      stepPlayer(me, target, dt);
+      if (target && !me.moving && Math.hypot(me.x - target.x, me.z - target.z) < 0.3) { target = null; marker.visible = false; }
+      player.position.set(me.x, groundY(me.x, me.z) + 0.9, me.z); // ground following (bilinear heightmap)
+      player.rotation.y = me.heading;
+      game.follow(player.position);
+    };
     setAspect = game.setAspect;
   }
 
