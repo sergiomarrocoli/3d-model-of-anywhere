@@ -12,7 +12,7 @@ import geopandas as gpd
 import requests
 from pyproj import Transformer
 from shapely.geometry import LineString, MultiPolygon, Polygon, box
-from shapely.ops import transform, unary_union
+from shapely.ops import polygonize, transform, unary_union
 
 # Tried in order. The main instance can fail TLS on LibreSSL-based Pythons (e.g. macOS system Python).
 OVERPASS_URLS = [
@@ -35,20 +35,31 @@ def _to_wgs84_bbox(bbox):
     return min(lats), min(lons), max(lats), max(lons)
 
 
-def _rings(el, nodes_by_id=None):
-    """Return polygons for an Overpass way or multipolygon relation (with `out geom`)."""
+def _polygons_from_lines(lines):
+    """Rings from member ways. An outline is often split over several ways that are only closed all together, so node
+    them where they meet and take the closed rings (a way that is already closed passes straight through)."""
+    lines = [l for l in lines if len(l.coords) >= 2]
+    if not lines:
+        return []
+    return list(polygonize(unary_union(lines)))   # union nodes the lines where they meet, then polygonize finds the closed rings
+
+
+def _rings(el):
+    """Polygons for an Overpass way, or a multipolygon relation (queried with `out geom`, which includes member geometry)."""
     if el["type"] == "way":
         pts = [(p["lon"], p["lat"]) for p in el.get("geometry", [])]
         return [Polygon(pts)] if len(pts) >= 4 and pts[0] == pts[-1] else []
     outers, inners = [], []
     for m in el.get("members", []):
         pts = [(p["lon"], p["lat"]) for p in m.get("geometry", [])]
-        if len(pts) >= 4 and pts[0] == pts[-1]:
-            (inners if m["role"] == "inner" else outers).append(Polygon(pts))
-    if not outers:
+        if len(pts) >= 2:
+            (inners if m.get("role") == "inner" else outers).append(LineString(pts))
+    shells = _polygons_from_lines(outers)
+    if not shells:
         return []
-    shell = unary_union(outers)
-    return [shell.difference(unary_union(inners)) if inners else shell]
+    shell = unary_union(shells)
+    holes = _polygons_from_lines(inners)
+    return [shell.difference(unary_union(holes)) if holes else shell]
 
 
 class _Cached:
@@ -91,7 +102,9 @@ def _overpass(query, cache_dir=None, ttl=None):
 def fetch_buildings(bbox, out):
     """bbox = (minE, minN, maxE, maxN) in EPSG:27700. Writes GeoJSON (27700 metres) to `out`."""
     s, w, n, e = _to_wgs84_bbox(bbox)
-    q = f'[out:json][timeout:60];(way["building"]({s},{w},{n},{e});relation["building"]({s},{w},{n},{e}););out geom tags;'
+    # `out geom;` (tags, and member geometry for relations). Adding `tags` here would strip the members from every
+    # multipolygon relation, silently dropping courtyard and other large buildings.
+    q = f'[out:json][timeout:60];(way["building"]({s},{w},{n},{e});relation["building"]({s},{w},{n},{e}););out geom;'
     resp = _overpass(q)
 
     to_bng = Transformer.from_crs("EPSG:4326", CRS, always_xy=True).transform
@@ -104,10 +117,10 @@ def fetch_buildings(bbox, out):
             props["osm_id"] = f'{el["type"]}/{el["id"]}'
             rows.append({**props, "geometry": transform(to_bng, geom)})
 
-    gdf = gpd.GeoDataFrame(rows, geometry="geometry", crs=CRS)
-    if gdf.empty:
+    if not rows:  # nothing mapped here (open country, a rural box): an empty result, not an error
         gdf = gpd.GeoDataFrame({"osm_id": []}, geometry=[], crs=CRS)
     else:
+        gdf = gpd.GeoDataFrame(rows, geometry="geometry", crs=CRS)
         gdf["geometry"] = gdf.geometry.make_valid().intersection(box(*bbox))
         gdf = gdf[~gdf.geometry.is_empty].explode(index_parts=False)
         gdf = gdf[gdf.geom_type == "Polygon"].reset_index(drop=True)
