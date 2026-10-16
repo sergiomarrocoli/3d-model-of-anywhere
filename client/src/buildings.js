@@ -16,6 +16,52 @@ export const ROOF_INSET_M = 1.5;       // within this distance of the footprint 
 export const MIN_ROOF_ABOVE_BASE_M = 2;
 const MAX_REFINE_PASSES = 10;
 
+// Wall texture: each wall is its average colour (8 taps spread along its footprint edge in the imagery) with a subtle
+// grain around it. The grain has two parts, both from smooth noise addressed in metres along and up the wall, so
+// it is continuous across the pieces a wall is split into: (1) a pull toward the colour found at a random place
+// along the edge, so walls with several colours get a hint of each, and (2) a gentle brightness mottle.
+export const WALL_PATCH_M = 0.6;     // size of the larger grain features
+export const WALL_VARIATION = 0.3;   // 0 = flat average colour, 1 = fully the randomly picked colour
+export const WALL_MOTTLE = 0.12;     // +/- brightness variation
+
+/** Wall shading: needs the `wallDetail` (along metres, elevation metres) and `wallEdge` (edge start uv, end uv) attributes. */
+export function addWallPatchwork(material, { patchM = WALL_PATCH_M, variation = WALL_VARIATION, mottle = WALL_MOTTLE } = {}) {
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uPatchM = { value: patchM };
+    shader.uniforms.uVariation = { value: variation };
+    shader.uniforms.uMottle = { value: mottle };
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec2 wallDetail;\nattribute vec4 wallEdge;\nvarying vec2 vWallDetail;\nvarying vec4 vWallEdge;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWallDetail = wallDetail;\nvWallEdge = wallEdge;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>
+        varying vec2 vWallDetail;
+        varying vec4 vWallEdge;
+        uniform float uPatchM;
+        uniform float uVariation;
+        uniform float uMottle;
+        float wallHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        float wallNoise(vec2 p) { // smooth value noise, 0..1
+          vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(wallHash(i), wallHash(i + vec2(1.0, 0.0)), f.x), mix(wallHash(i + vec2(0.0, 1.0)), wallHash(i + vec2(1.0, 1.0)), f.x), f.y);
+        }`)
+      .replace('#include <map_fragment>', `
+        vec3 wallMean = vec3(0.0);
+        for (int i = 0; i < 8; i++) wallMean += texture2D(map, mix(vWallEdge.xy, vWallEdge.zw, (float(i) + 0.5) / 8.0)).rgb;
+        wallMean /= 8.0;
+        vec2 wallP = vWallDetail / uPatchM + vWallEdge.xy * 1000.0;               // per-wall offset so walls differ
+        float wallT = wallNoise(wallP * 1.0);                                      // where along the edge to borrow a colour from
+        wallT = clamp((wallT - 0.5) * 2.2 + 0.5, 0.0, 1.0);                        // noise clusters near 0.5; stretch it to use the full edge
+        vec3 wallPick = texture2D(map, mix(vWallEdge.xy, vWallEdge.zw, wallT)).rgb;
+        float wallMottleN = wallNoise(wallP * 3.1 + 17.0) * 0.6 + wallNoise(wallP * 7.3 + 5.0) * 0.4;
+        vec3 wallCol = mix(wallMean, wallPick, uVariation) * (1.0 + uMottle * (wallMottleN * 2.0 - 1.0) * 1.6);
+        vec4 sampledDiffuseColor = vec4(wallCol, 1.0);
+        diffuseColor *= sampledDiffuseColor;`);
+  };
+  material.customProgramCacheKey = () => 'wallpatchwork2';
+  material.needsUpdate = true;
+}
+
 const signedArea = (ring) => ring.reduce((s, [x0, y0], i) => { const [x1, y1] = ring[(i + 1) % ring.length]; return s + (x0 * y1 - x1 * y0); }, 0) / 2;
 
 /** Drop the repeated closing point; orient the outer ring counter-clockwise and holes clockwise (seen from above). */
@@ -98,7 +144,7 @@ function refineTriangles(verts, tris, maxLen) {
  */
 export function buildBuildingGeometry(meta, buildings, surface = null) {
   const [W, H] = meta.size_m;
-  const wp = [], wn = [], wuv = [], wi = [];
+  const wp = [], wn = [], wuv = [], wdt = [], wedge = [], wi = [];
   const rp = [], rn = [], ruv = [], ri = [];
 
   for (const f of buildings.features) {
@@ -137,6 +183,13 @@ export function buildBuildingGeometry(meta, buildings, surface = null) {
           for (let n = 0; n < 4; n++) wn.push(nx, 0, nz);
           const a = [(x0 + sx) / W, 1 - (y0 + sy) / H], b = [(x1 + sx) / W, 1 - (y1 + sy) / H];
           wuv.push(...a, ...b, ...b, ...a); // same UV top and bottom: colour is constant up each wall
+          // Patchwork inputs: metres along this wall (from its first corner) and elevation, plus the imagery UVs
+          // of the whole edge's two ends, so every piece of a wall draws from the same colours.
+          const ux = (p1[0] - p0[0]) / len, uy = (p1[1] - p0[1]) / len;
+          const along = (x, y) => (x - p0[0]) * ux + (y - p0[1]) * uy;
+          wdt.push(along(x0, y0), base, along(x1, y1), base, along(x1, y1), roofZ(x1, y1), along(x0, y0), roofZ(x0, y0));
+          const eA = [(p0[0] + sx) / W, 1 - (p0[1] + sy) / H], eB = [(p1[0] + sx) / W, 1 - (p1[1] + sy) / H];
+          for (let n = 0; n < 4; n++) wedge.push(...eA, ...eB);
           wi.push(k, k + 1, k + 2, k, k + 2, k + 3);
         }
       }
@@ -168,13 +221,18 @@ export function buildBuildingGeometry(meta, buildings, surface = null) {
     g.setIndex(idx);
     return g;
   };
-  return { walls: make(wp, wn, wuv, wi), roofs: make(rp, rn, ruv, ri) };
+  const wallGeo = make(wp, wn, wuv, wi);
+  wallGeo.setAttribute('wallDetail', new THREE.Float32BufferAttribute(wdt, 2));
+  wallGeo.setAttribute('wallEdge', new THREE.Float32BufferAttribute(wedge, 4));
+  return { walls: wallGeo, roofs: make(rp, rn, ruv, ri) };
 }
 
-export function buildBuildings(meta, buildings, imageryTex, surface = null) {
+export function buildBuildings(meta, buildings, imageryTex, surface = null, renderer = null) {
   const { walls, roofs } = buildBuildingGeometry(meta, buildings, surface);
   const group = new THREE.Group(); group.name = 'buildings';
-  const wallMesh = new THREE.Mesh(walls, new THREE.MeshLambertMaterial({ map: imageryTex, color: new THREE.Color().setRGB(WALL_BRIGHTNESS, WALL_BRIGHTNESS, WALL_BRIGHTNESS, THREE.SRGBColorSpace) }));
+  const wallMat = new THREE.MeshLambertMaterial({ map: imageryTex, color: new THREE.Color().setRGB(WALL_BRIGHTNESS, WALL_BRIGHTNESS, WALL_BRIGHTNESS, THREE.SRGBColorSpace) });
+  addWallPatchwork(wallMat);
+  const wallMesh = new THREE.Mesh(walls, wallMat);
   const roofMesh = new THREE.Mesh(roofs, new THREE.MeshBasicMaterial({ map: imageryTex, side: THREE.DoubleSide }));
   wallMesh.name = 'walls'; roofMesh.name = 'roofs';
   group.add(wallMesh, roofMesh);

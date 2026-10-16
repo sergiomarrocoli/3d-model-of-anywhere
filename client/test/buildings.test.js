@@ -156,3 +156,38 @@ describe('pitched roofs from a surface map', () => {
     expect(Math.max(...ys(buildBuildingGeometry(meta, fc(house), spike).roofs))).toBeLessThanOrEqual(cap + 1e-6);
   });
 });
+
+
+describe('wall patchwork texture', () => {
+  const g = buildBuildingGeometry(meta, fc(poly([sq(10, 20, 30, 40)])));
+  it('gives walls metres-along and elevation attributes, continuous along a wall', () => {
+    const t = g.walls.getAttribute('wallDetail'), p = g.walls.getAttribute('position');
+    expect(t.count).toBe(p.count);
+    const k = 0; // first wall quad: bottom0, bottom1, top1, top0
+    expect(t.getY(k + 2) - t.getY(k)).toBeCloseTo(8, 3);            // 8 m tall wall
+    expect(t.getX(k + 1) - t.getX(k)).toBeCloseTo(20, 3);           // 20 m wall along the edge
+    expect(t.getX(k + 3)).toBeCloseTo(t.getX(k)); expect(t.getX(k + 2)).toBeCloseTo(t.getX(k + 1));
+  });
+  it('every vertex of a wall carries the imagery UVs of the whole edge (inset into the building), not just its piece', () => {
+    const e = g.walls.getAttribute('wallEdge'), uv = g.walls.getAttribute('uv');
+    for (let q = 0; q < 4; q++) {
+      const k = q * 4;
+      for (let c = 0; c < 4; c++) for (let m = 0; m < 4; m++) expect(e.getX(k + c) === e.getX(k + m) && e.getW(k + c) === e.getW(k + m)).toBe(true);
+      expect(e.getX(k)).toBeCloseTo(uv.getX(k)); expect(e.getY(k)).toBeCloseTo(uv.getY(k));       // start of edge = sample point of the first corner
+      expect(e.getZ(k)).toBeCloseTo(uv.getX(k + 1)); expect(e.getW(k)).toBeCloseTo(uv.getY(k + 1)); // end of edge
+    }
+  });
+  it('a long wall split into pieces (pitched roofs) still samples the whole edge', () => {
+    const n = 100, surface = { width: n, height: n, resolution: 1, data: new Float32Array(n * n).fill(20) };
+    const w = buildBuildingGeometry(meta, fc(poly([sq(10, 20, 50, 40)], { base_z: 12, height: 8 })), surface).walls;
+    const e = w.getAttribute('wallEdge'), t = w.getAttribute('wallDetail');
+    expect(w.getAttribute('position').count).toBeGreaterThan(16);                    // split into more than 4 quads
+    const xs = new Set(); for (let i = 0; i < e.count; i++) xs.add(`${e.getX(i).toFixed(4)},${e.getY(i).toFixed(4)},${e.getZ(i).toFixed(4)},${e.getW(i).toFixed(4)}`);
+    expect(xs.size).toBe(4);                                                         // one (start,end) pair per wall
+    let maxAlong = 0; for (let i = 0; i < t.count; i++) maxAlong = Math.max(maxAlong, t.getX(i)); expect(maxAlong).toBeCloseTo(40, 3);
+  });
+  it('buildBuildings still produces walls and roofs', () => {
+    const grp = buildBuildings(meta, fc(poly([sq(10, 20, 30, 40)])), new THREE.Texture());
+    expect(grp.children.map((c) => c.name)).toEqual(['walls', 'roofs']);
+  });
+});
