@@ -34,7 +34,7 @@ function bundlesPlugin() {
 export default defineConfig({
   plugins: [bundlesPlugin()],
   resolve: {
-    alias: Object.fromEntries(['map', 'walker', 'presence', 'picker', 'builder', 'credits'].map((m) => [`@${m}`, path.join(modulesDir, m, 'client/index.js')])),
+    alias: Object.fromEntries(['map', 'walker', 'presence', 'picker', 'builder', 'credits', 'track'].map((m) => [`@${m}`, path.join(modulesDir, m, 'client/index.js')])),
     dedupe: ['three', 'fast-png', 'maplibre-gl', 'proj4'],
   },
   // In dev, /ws goes to the presence server (`npm start` in ../modules/presence/server); without it the game is single player.

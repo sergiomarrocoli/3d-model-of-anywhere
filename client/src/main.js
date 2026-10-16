@@ -3,14 +3,16 @@
 //   modules/picker    pick   choose an area on an open map                        -> ctx.bbox
 //   modules/builder   build  ask the build service for it and wait                -> ctx.area, ctx.bundleUrl
 //   modules/credits   a Credits button and overlay listing the sources the area used (used by play)
-//   (a track drawer, say, could go here: reads ctx.area / ctx.bbox, adds ctx.overlay)
+//   modules/track    track  draw a closed track on an overhead view, around buildings   -> ctx.overlay (a game draws or uses it)
 //   play              load the map (modules/map), run the game (modules/walker), friends (modules/presence)
-// URLs: /  plays the default area;  ?area=<id>  plays that one;  ?pick  is ?flow=pick,build,play;  ?flow=a,b,c  runs steps a, b, c.
+// URLs: /  plays the default area;  ?area=<id>  plays that one;  ?pick  is ?flow=pick,build,play;  ?flow=a,b,c  runs steps a, b, c,
+//       e.g. ?flow=pick,build,track,play  or, on an area already built,  ?flow=track,play&area=newtown
 import * as THREE from 'three';
 import { buildStep } from '@builder';
 import { mountCredits } from '@credits';
 import { createFlyCamera, debugMain, listMaps, loadMap } from '@map';
 import { startPresence } from '@presence';
+import { buildTrackRibbon, trackStep } from '@track';
 import { startWalker } from '@walker';
 import { FlowError, parseFlow, runFlow, urlAfterBuild } from './flow.js';
 
@@ -27,6 +29,7 @@ async function playGame({ area, overlay = null }) {
 
   const map = await loadMap(`/bundles/area_${area}`, { renderer });
   scene.add(map.object);
+  if (overlay?.type === 'track') scene.add(buildTrackRibbon(overlay, map.groundY));   // a track drawn in the track step
   mountCredits($('credits'), map.attribution);
   const [W, D] = map.size;
 
@@ -62,6 +65,7 @@ async function main() {
   const registry = {
     pick: { name: 'pick', run: (ctx, host) => import('@picker').then((m) => m.pickStep.run(ctx, host)) },   // loaded only when used: MapLibre is large
     build: buildStep,
+    track: trackStep,
     play: { name: 'play', async run(ctx) {
       const id = ctx.area ?? area;
       if (ctx.bundleUrl) history.replaceState(null, '', urlAfterBuild(location.href, id));   // an area was just built: a refresh plays it
