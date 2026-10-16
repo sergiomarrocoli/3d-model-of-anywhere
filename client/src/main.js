@@ -74,12 +74,27 @@ async function main() {
     marker.renderOrder = 10; marker.visible = false;
     scene.add(player, marker);
 
+    // Camera controls: wheel / pinch zooms (any distance); right-drag, Alt+wheel or a trackpad two-finger slide tilts.
+    // Mouse wheels and trackpad slides both arrive as wheel events; pinch has ctrlKey set and plain mouse wheels
+    // come as big whole-number steps, so anything else is treated as a trackpad slide.
+    const isMouseWheel = (e) => e.deltaMode !== 0 || (e.deltaX === 0 && Number.isInteger(e.deltaY) && Math.abs(e.deltaY) >= 50);
+    canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      if (e.ctrlKey || (isMouseWheel(e) && !e.altKey)) game.zoomBy(Math.exp(e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)));
+      else game.tiltBy(-e.deltaY * 0.15);
+    }, { passive: false });
+    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    let tilting = null;
+    canvas.addEventListener('pointerdown', (e) => { if (e.button === 2) { tilting = e.clientY; canvas.setPointerCapture(e.pointerId); } });
+    canvas.addEventListener('pointermove', (e) => { if (tilting !== null) { game.tiltBy((e.clientY - tilting) * 0.3); tilting = e.clientY; } });
+    canvas.addEventListener('pointerup', (e) => { if (e.button === 2) tilting = null; });
+
     // Click-to-move (Cannon Fodder style): a click that was not a drag sets the walk target on the terrain.
     const ray = new THREE.Raycaster();
     let down = null;
-    canvas.addEventListener('pointerdown', (e) => { down = { x: e.clientX, y: e.clientY }; });
+    canvas.addEventListener('pointerdown', (e) => { if (e.button !== 0) return; down = { x: e.clientX, y: e.clientY }; });
     canvas.addEventListener('pointerup', (e) => {
-      if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 5) return;
+      if (e.button !== 0 || !down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 5) return;
       ray.setFromCamera(new THREE.Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1), camera);
       const hit = rayHeightfield(ray.ray.origin, ray.ray.direction, groundY, { step: 2 });
       if (!hit) return;

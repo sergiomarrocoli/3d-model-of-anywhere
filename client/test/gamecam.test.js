@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { cameraOffset, frustum, createGameCamera } from '../src/gamecam.js';
+import { cameraOffset, frustum, createGameCamera, VIEW_WIDTH_M, MAX_VIEW_M, MIN_VIEW_M, MIN_TILT_DEG, MAX_TILT_DEG } from '../src/gamecam.js';
 
 const cam = (c) => { c.updateMatrixWorld(true); return c; };
 
@@ -25,7 +25,7 @@ describe('game camera', () => {
     expect(Math.abs(ndc.x)).toBeLessThan(1e-6); expect(Math.abs(ndc.y)).toBeLessThan(1e-6);
   });
   it('a point 25 m east of the target sits on the right screen edge (50 m wide view)', () => {
-    const { camera, follow } = createGameCamera({ aspect: 1.5 });
+    const { camera, follow } = createGameCamera({ aspect: 1.5, viewWidth: 50 });
     const t = new THREE.Vector3(100, 10, -100); follow(t);
     expect(new THREE.Vector3(125, 10, -100).project(cam(camera)).x).toBeCloseTo(1, 6);
   });
@@ -33,5 +33,31 @@ describe('game camera', () => {
     const { camera, follow } = createGameCamera();
     const t = new THREE.Vector3(0, 0, 0); follow(t);
     expect(new THREE.Vector3(0, 0, -10).project(cam(camera)).y).toBeGreaterThan(0);
+  });
+
+  it('defaults to 150 m across (3x zoomed out from 50 m)', () => {
+    expect(VIEW_WIDTH_M).toBe(150);
+    const { camera } = createGameCamera({ aspect: 1 });
+    expect(camera.right - camera.left).toBe(150);
+  });
+  it('zoom is multiplicative and clamped, and keeps the target centred', () => {
+    const g = createGameCamera({ aspect: 2 });
+    const t = new THREE.Vector3(40, 3, -60); g.follow(t);
+    g.zoomBy(2); expect(g.camera.right - g.camera.left).toBeCloseTo(300);
+    g.zoomBy(1e9); expect(g.state.viewWidth).toBe(MAX_VIEW_M);
+    g.zoomBy(1e-12); expect(g.state.viewWidth).toBe(MIN_VIEW_M);
+    const ndc = t.clone().project(cam(g.camera));
+    expect(Math.abs(ndc.x)).toBeLessThan(1e-6); expect(Math.abs(ndc.y)).toBeLessThan(1e-6);
+  });
+  it('tilt changes the view angle, is clamped, keeps the target centred and north up', () => {
+    const g = createGameCamera({ aspect: 1.5 });
+    const t = new THREE.Vector3(10, 2, -10); g.follow(t);
+    g.tiltBy(-1000); expect(g.state.tiltDeg).toBe(MIN_TILT_DEG);
+    g.tiltBy(1000); expect(g.state.tiltDeg).toBe(MAX_TILT_DEG);
+    g.tiltBy(-30); expect(g.state.tiltDeg).toBe(60);
+    cam(g.camera);
+    const ndc = t.clone().project(g.camera);
+    expect(Math.abs(ndc.x)).toBeLessThan(1e-6); expect(Math.abs(ndc.y)).toBeLessThan(1e-6);
+    expect(new THREE.Vector3(10, 2, -20).project(g.camera).y).toBeGreaterThan(0);
   });
 });
