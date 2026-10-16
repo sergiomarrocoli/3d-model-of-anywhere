@@ -34,7 +34,7 @@ async function main() {
   scene.background = BG;
   const terrain = buildTerrain(meta, heightmap, imagery, renderer);
   scene.add(terrain);
-  scene.add(buildBuildings(meta, buildings, terrain.material.map, surface)); // roofs share the terrain's imagery texture
+  scene.add(buildBuildings(meta, buildings, terrain.material.map, surface, renderer)); // roofs share the terrain's imagery texture
 
   // One directional "sun", no shadows (the imagery already has baked ones). Only walls are lit; roofs and
   // terrain are unlit imagery. A little ambient keeps shaded walls from going black.

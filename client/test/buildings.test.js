@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { buildBuildingGeometry, buildBuildings, WALL_BRIGHTNESS, WALL_SAMPLE_INSET_M } from '../src/buildings.js';
+import { buildBuildingGeometry, buildBuildings, brickTileData, WALL_BRIGHTNESS, WALL_SAMPLE_INSET_M, WALL_TILE_M } from '../src/buildings.js';
 
 const meta = { size_m: [100, 100], heightmap: { min: 10 } };
 const fc = (...features) => ({ type: 'FeatureCollection', features });
@@ -154,5 +154,35 @@ describe('pitched roofs from a surface map', () => {
     const spike = { ...surface, data: data.map((v, i) => (i % 7 === 0 ? 200 : v)) };
     const cap = 12 + 2 * 10 + 2 - 10; // base + 2h + 2 - zRef
     expect(Math.max(...ys(buildBuildingGeometry(meta, fc(house), spike).roofs))).toBeLessThanOrEqual(cap + 1e-6);
+  });
+});
+
+
+describe('wall detail texture', () => {
+  it('brick tile keeps the colour balance (mean near 1 as a multiplier) with visible mortar and tone variation', () => {
+    const d = brickTileData(128); const vals = []; for (let i = 0; i < d.length; i += 4) vals.push(d[i] / 255);
+    const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+    expect(mean).toBeGreaterThan(0.75); expect(mean).toBeLessThan(0.95);   // 0.9 scale factor leaves headroom, so walls are not brightened
+    expect(Math.min(...vals)).toBeLessThan(0.6); expect(Math.max(...vals)).toBeGreaterThan(0.9);
+    expect(new Set(vals.map((v) => v.toFixed(2))).size).toBeGreaterThan(5);
+  });
+  it('is tileable: opposite edges line up', () => {
+    const n = 128, d = brickTileData(n);
+    const px = (x, y) => d[(y * n + x) * 4];
+    for (let i = 0; i < n; i++) { expect(Math.abs(px(0, i) - px(n - 1, i))).toBeLessThan(120); }
+    expect(brickTileData(n)).toEqual(brickTileData(n));   // deterministic
+  });
+  const g = buildBuildingGeometry(meta, fc(poly([sq(10, 20, 30, 40)])));
+  it('gives walls detail UVs in tile units: continuous along a wall and rising with height', () => {
+    const t = g.walls.getAttribute('detailUv'), p = g.walls.getAttribute('position');
+    expect(t.count).toBe(p.count);
+    const k = 0; // first wall quad: bottom0, bottom1, top1, top0
+    expect(t.getY(k + 2) - t.getY(k)).toBeCloseTo(8 / WALL_TILE_M[1], 3);      // 8 m tall wall
+    expect(t.getX(k + 1) - t.getX(k)).toBeCloseTo(20 / WALL_TILE_M[0], 3);     // 20 m wall along the edge
+    expect(t.getX(k + 3)).toBeCloseTo(t.getX(k)); expect(t.getX(k + 2)).toBeCloseTo(t.getX(k + 1));
+  });
+  it('buildBuildings still produces walls and roofs', () => {
+    const grp = buildBuildings(meta, fc(poly([sq(10, 20, 30, 40)])), new THREE.Texture());
+    expect(grp.children.map((c) => c.name)).toEqual(['walls', 'roofs']);
   });
 });
