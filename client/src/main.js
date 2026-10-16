@@ -7,7 +7,7 @@ import { createGameCamera } from './gamecam.js';
 import { sampleHeight } from './heightmap.js';
 import { rayHeightfield, stepPlayer } from './player.js';
 import { clampToBox } from './edge.js';
-import { connectPresence, smoothTo, smoothAngle } from './multiplayer.js';
+import { startPresence } from '@presence';
 import { resolveSlope, speedFactor } from './slope.js';
 import { buildCollisionGrid, resolveCircle, insideBuilding } from './collision.js';
 import { zRef } from './coords.js';
@@ -94,25 +94,8 @@ async function main() {
     canvas.addEventListener('pointermove', (e) => { if (tilting !== null) { game.tiltBy((e.clientY - tilting.y) * 0.3); game.yawBy(-(e.clientX - tilting.x) * 0.3); tilting = { x: e.clientX, y: e.clientY }; } });
     canvas.addEventListener('pointerup', (e) => { if (e.button === 2) tilting = null; });
 
-    // Presence: friends in the same room see each other. Rooms default to the area id; share the page URL.
-    const name = params.get('name') ?? (() => { try { return localStorage.getItem('cw-name') ?? (localStorage.cw_name = `Player ${Math.floor(Math.random() * 900 + 100)}`); } catch { return 'Player'; } })();
-    const room = params.get('room') ?? area;
-    const remotes = new Map(); // peer id -> { mesh, x, z, h }
-    const playersEl = $('players');
-    const renderPlayers = () => {
-      const st = presence.state;
-      if (st.status === 'offline') { playersEl.hidden = true; return; }
-      if (st.colour) player.material.color.set(st.colour); // your own capsule wears the colour others see you in
-      const dot = (c) => `<span class="dot" style="background:${c}"></span>`;
-      const rows = [`${dot(st.colour ?? '#e03030')}${name} (you)`, ...[...st.peers.values()].map((p) => `${dot(p.colour)}${p.name}`)];
-      playersEl.innerHTML = `room <b>${room}</b> (${st.status})<br>${rows.join('<br>')}<br><button id="copylink">copy link</button>`;
-      playersEl.hidden = false;
-      $('copylink').onclick = () => { const u = new URL(location.href); u.searchParams.set('area', area); u.searchParams.set('room', room); u.searchParams.delete('name'); navigator.clipboard?.writeText(u.href); };
-    };
-    const presence = connectPresence({ room, name, onChange: (kind) => {
-      if (kind !== 'pos') renderPlayers();
-      for (const [id, r] of remotes) if (!presence.state.peers.has(id)) { scene.remove(r.mesh); remotes.delete(id); } // left the room
-    } });
+    // Friends in the same room see each other (modules/presence). Rooms default to the area id; share the page URL.
+    const presence = startPresence({ scene, localMesh: player, groundY, overlay: $('players'), area, params });
 
     // Click-to-move (Cannon Fodder style): a click that was not a drag sets the walk target on the terrain.
     const ray = new THREE.Raycaster();
@@ -154,19 +137,7 @@ async function main() {
       player.position.set(me.x, groundY(me.x, me.z) + 0.9, me.z); // ground following (bilinear heightmap)
       player.rotation.y = me.heading;
       game.follow(player.position);
-      presence.update(performance.now(), me.x, me.z, me.heading);
-      for (const p of presence.state.peers.values()) { // other players: ease toward the last position the server relayed
-        if (!Number.isFinite(p.x)) continue;
-        let r = remotes.get(p.id);
-        if (!r) {
-          const mesh = new THREE.Mesh(new THREE.CapsuleGeometry(0.4, 1.0, 4, 12), new THREE.MeshLambertMaterial({ color: p.colour }));
-          const nose = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.5), new THREE.MeshLambertMaterial({ color: 0xffffff }));
-          nose.position.set(0, 0.4, 0.5); mesh.add(nose); scene.add(mesh);
-          r = { mesh, x: p.x, z: p.z, h: p.h }; remotes.set(p.id, r);
-        }
-        r.x = smoothTo(r.x, p.x, dt); r.z = smoothTo(r.z, p.z, dt); r.h = smoothAngle(r.h, p.h, dt);
-        r.mesh.position.set(r.x, groundY(r.x, r.z) + 0.9, r.z); r.mesh.rotation.y = r.h;
-      }
+      presence.update(dt, me);
     };
     setAspect = game.setAspect;
   }

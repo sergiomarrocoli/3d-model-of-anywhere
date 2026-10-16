@@ -12,4 +12,4 @@ npm test
 
 ## Playing with friends
 
-See `../server/README.md`: a small server serves the built client and bundles and relays player positions so friends can share a map (`npm run share` builds the client and starts it).
+See `../modules/presence/README.md`: a self-contained module (client and server halves) that lets friends share a map; `npm run share` builds the client and starts its server.
