@@ -17,7 +17,9 @@ modules/picker/client/
 Open it in the game with `?pick` (a "pick area" link sits in the top bar). It shows the box size and centre, warns if
 the box leaves the Ordnance Survey grid (the data sources only cover Great Britain), remembers the last box, and shows the
 `python3 -m pipeline.build_area --bbox ...` command that builds it. The **Build this area** button calls `onBuild(box)`; it
-stays disabled until a host passes one (the build service and button flow are the next M4 stories).
+stays disabled until a host passes one (the flow does, as `pick` followed by `build`).
+
+`pickStep` is the same page as a flow step (see `../README.md`): it resolves when Build is pressed and adds `ctx.bbox` and `ctx.box`.
 
 ```js
 import { mountPickerPage } from '@picker';

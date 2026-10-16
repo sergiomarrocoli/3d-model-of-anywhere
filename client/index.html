@@ -13,14 +13,14 @@
     #players button { font: inherit; font-size: 11px; margin-left: 6px; }
     #credits { position: fixed; bottom: 6px; left: 12px; right: 12px; font-size: 11px; opacity: .8; text-shadow: 0 0 4px #000; }
     a { color: #8ab4f8; margin-right: 8px; } a.on { color: #fff; font-weight: 700; }
-    body.pick #scene, body.pick #hud, body.pick #credits { display: none; }
+    body.flow #scene, body.flow #hud, body.flow #credits { display: none; }
     body.debug #scene { display: none; } body.debug #hud { position: static; margin: 16px; }
     pre { background: #1d2026; padding: 12px; border-radius: 6px; overflow: auto; margin: 0 16px; }
     .row[hidden] { display: none; } .row { display: flex; gap: 16px; flex-wrap: wrap; margin: 16px; } canvas.dbg { max-width: 100%; image-rendering: pixelated; border: 1px solid #333; }
   </style>
 </head>
 <body>
-  <div id="pick" hidden></div>
+  <div id="flow" hidden></div>
   <canvas id="scene"></canvas>
   <div id="hud"><div id="areas"></div></div>
   <div id="players" hidden></div>
