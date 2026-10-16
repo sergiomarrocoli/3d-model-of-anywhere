@@ -6,6 +6,7 @@ import { createFlyCamera } from './flycam.js';
 import { createGameCamera } from './gamecam.js';
 import { sampleHeight } from './heightmap.js';
 import { rayHeightfield, stepPlayer } from './player.js';
+import { resolveSlope, speedFactor } from './slope.js';
 import { buildCollisionGrid, resolveCircle, insideBuilding } from './collision.js';
 import { zRef } from './coords.js';
 
@@ -105,7 +106,14 @@ async function main() {
     });
 
     tick = (dt) => {
+      const x0 = me.x, z0 = me.z;
       stepPlayer(me, target, dt);
+      const f = speedFactor(heightmap, x0, -z0, me.x - x0, -(me.z - z0)); // slower uphill, in proportion to the slope
+      me.x = x0 + (me.x - x0) * f; me.z = z0 + (me.z - z0) * f;
+      const ok = resolveSlope(heightmap, x0, -z0, me.x, -me.z); // cliffs and steep banks block uphill movement
+      if (ok.x !== me.x) me.vx = 0;
+      if (-ok.y !== me.z) me.vz = 0;
+      me.x = ok.x; me.z = -ok.y;
       const fixed = resolveCircle(solid, me.x, -me.z); // buildings are solid; wall contact slides along the wall
       const px = fixed.x - me.x, pz = -fixed.y - me.z, pl = Math.hypot(px, pz);
       if (pl > 1e-6) { // drop the velocity component that pushed into the wall so we slide rather than jitter
