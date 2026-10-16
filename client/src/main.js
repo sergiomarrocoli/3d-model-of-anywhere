@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { loadBundle } from './bundle.js';
 import { buildTerrain } from './terrain.js';
 import { buildBuildings } from './buildings.js';
+import { createFlyCamera } from './flycam.js';
 import { zRef } from './coords.js';
 
 const $ = (id) => document.getElementById(id);
@@ -28,20 +28,21 @@ async function main() {
   scene.add(terrain);
   scene.add(buildBuildings(meta, buildings, terrain.material.map)); // roofs share the terrain's imagery texture
 
-  // Only the wall material is lit (the imagery already has baked shadows); #14 finalises lighting.
+  // One directional "sun", no shadows (the imagery already has baked ones). Only walls are lit; roofs and
+  // terrain are unlit imagery. A little ambient keeps shaded walls from going black.
   scene.add(new THREE.AmbientLight(0xffffff, 1.4));
   const sun = new THREE.DirectionalLight(0xfff2dd, 1.8);
   sun.position.set(-200, 300, 150);
   scene.add(sun);
 
-  // Temporary orbit camera so the terrain can be inspected; #14 replaces it with a free-fly camera.
   const [W, H] = meta.size_m;
   const camera = new THREE.PerspectiveCamera(50, 1, 1, 5000);
-  const centre = new THREE.Vector3(W / 2, 0, -H / 2);
-  camera.position.set(W * 0.5, W * 0.75, W * 0.45);
-  const controls = new OrbitControls(camera, canvas);
-  controls.target.copy(centre);
-  controls.update();
+  const fly = createFlyCamera(camera, canvas, {
+    position: new THREE.Vector3(W * 0.5, W * 0.45, -H * 0.5 + W * 0.45),
+    lookAt: new THREE.Vector3(W / 2, 0, -H / 2),
+    speed: W / 8,
+  });
+  const clock = new THREE.Clock();
 
   const resize = () => {
     const w = innerWidth, h = innerHeight;
@@ -49,8 +50,8 @@ async function main() {
     camera.aspect = w / h; camera.updateProjectionMatrix();
   };
   addEventListener('resize', resize); resize();
-  renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
-  window.__app = { THREE, scene, camera, renderer, controls, meta, zRef: zRef(meta) };
+  renderer.setAnimationLoop(() => { fly.update(Math.min(clock.getDelta(), 0.1)); renderer.render(scene, camera); });
+  window.__app = { THREE, scene, camera, renderer, fly, meta, zRef: zRef(meta) };
   document.title = `civil-war: ${meta.id}`;
 }
 
