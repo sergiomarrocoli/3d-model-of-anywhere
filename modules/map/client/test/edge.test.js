@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { clampToBox } from '../src/edge.js';
+import { clampToBox } from '../edge.js';
 
 const W = 1000, H = 800;
 describe('clampToBox', () => {

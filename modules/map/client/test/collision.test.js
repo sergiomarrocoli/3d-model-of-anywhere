@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildCollisionGrid, resolveCircle, insideBuilding } from '../src/collision.js';
+import { buildCollisionGrid, resolveCircle, insideBuilding } from '../collision.js';
 
 const sq = (x0, y0, x1, y1) => [[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]];
 const fc = (...polys) => ({ features: polys.map((coordinates) => ({ geometry: { type: 'Polygon', coordinates: [coordinates] } })) });

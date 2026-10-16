@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { flyDelta } from '../src/flycam.js';
+import { flyDelta } from '../flycam.js';
 
 describe('flyDelta', () => {
   it('W moves north (-Z) when facing north', () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { slopeAt, canStep, resolveSlope, speedFactor, MAX_SLOPE } from '../src/slope.js';
+import { slopeAt, canStep, resolveSlope, speedFactor, MAX_SLOPE } from '../slope.js';
 
 // 100x100 heightmap, 1 m cells; height = f(x, y) at cell centres, rows north to south.
 const make = (f) => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { buildBuildingGeometry, buildBuildings, WALL_BRIGHTNESS, WALL_SAMPLE_INSET_M } from '../src/buildings.js';
+import { buildBuildingGeometry, buildBuildings, WALL_BRIGHTNESS, WALL_SAMPLE_INSET_M } from '../buildings.js';
 
 const meta = { size_m: [100, 100], heightmap: { min: 10 } };
 const fc = (...features) => ({ type: 'FeatureCollection', features });

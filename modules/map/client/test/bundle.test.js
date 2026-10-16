@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { encode } from 'fast-png';
-import { decodeHeightmap, loadBundle } from '../src/bundle.js';
+import { decodeHeightmap, loadBundle } from '../bundle.js';
 
 const hm = { width: 3, height: 2, resolution_m: 1, min: 10, max: 20 };
 const png16 = (data, width = 3, height = 2) => encode({ width, height, data: Uint16Array.from(data), depth: 16, channels: 1 });
