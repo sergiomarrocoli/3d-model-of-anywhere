@@ -23,6 +23,8 @@ from PIL import Image
 from shapely.affinity import translate
 from shapely.geometry import mapping
 
+from . import PIPELINE_VERSION
+
 BUNDLE_VERSION = 1
 BUILDING_PROPS = ("building", "osm_id", "height", "base_z", "height_source")
 COORD_DECIMALS = 2  # centimetres
@@ -123,6 +125,7 @@ def write_bundle(out_dir, area_id, dtm_path, imagery_path, buildings, attributio
 
     meta = {
         "version": BUNDLE_VERSION,
+        "pipeline_version": PIPELINE_VERSION,
         "id": str(area_id),
         "created": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "crs": "EPSG:27700",
