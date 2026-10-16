@@ -3,6 +3,8 @@ import { loadBundle } from './bundle.js';
 import { buildTerrain } from './terrain.js';
 import { buildBuildings } from './buildings.js';
 import { createFlyCamera } from './flycam.js';
+import { createGameCamera } from './gamecam.js';
+import { sampleHeight } from './heightmap.js';
 import { zRef } from './coords.js';
 
 const $ = (id) => document.getElementById(id);
@@ -36,22 +38,40 @@ async function main() {
   scene.add(sun);
 
   const [W, H] = meta.size_m;
-  const camera = new THREE.PerspectiveCamera(50, 1, 1, 5000);
-  const fly = createFlyCamera(camera, canvas, {
-    position: new THREE.Vector3(W * 0.5, W * 0.45, -H * 0.5 + W * 0.45),
-    lookAt: new THREE.Vector3(W / 2, 0, -H / 2),
-    speed: W / 8,
-  });
+  const ref = zRef(meta);
   const clock = new THREE.Clock();
+  let camera, tick, setAspect = () => {};
+  let player;
+  if (params.has('fly')) {
+    // Debug free-fly camera (?fly)
+    camera = new THREE.PerspectiveCamera(50, 1, 1, 5000);
+    const fly = createFlyCamera(camera, canvas, {
+      position: new THREE.Vector3(W * 0.5, W * 0.45, -H * 0.5 + W * 0.45),
+      lookAt: new THREE.Vector3(W / 2, 0, -H / 2),
+      speed: W / 8,
+    });
+    tick = (dt) => fly.update(dt);
+    setAspect = (a) => { camera.aspect = a; camera.updateProjectionMatrix(); };
+  } else {
+    // Game view: fixed angled ortho camera locked to the player (#15)
+    const game = createGameCamera();
+    camera = game.camera;
+    player = new THREE.Mesh(new THREE.CapsuleGeometry(0.4, 1.0, 4, 12), new THREE.MeshLambertMaterial({ color: 0xe03030 }));
+    const place = (x, y) => player.position.set(x, sampleHeight(heightmap, x, y) - ref + 0.9, -y);
+    place(W / 2, H / 2);
+    scene.add(player);
+    tick = () => game.follow(player.position);
+    setAspect = game.setAspect;
+  }
 
   const resize = () => {
     const w = innerWidth, h = innerHeight;
     renderer.setSize(w, h, false);
-    camera.aspect = w / h; camera.updateProjectionMatrix();
+    setAspect(w / h);
   };
   addEventListener('resize', resize); resize();
-  renderer.setAnimationLoop(() => { fly.update(Math.min(clock.getDelta(), 0.1)); renderer.render(scene, camera); });
-  window.__app = { THREE, scene, camera, renderer, fly, meta, zRef: zRef(meta) };
+  renderer.setAnimationLoop(() => { tick(Math.min(clock.getDelta(), 0.1)); renderer.render(scene, camera); });
+  window.__app = { THREE, scene, camera, renderer, player, meta, zRef: zRef(meta) };
   document.title = `civil-war: ${meta.id}`;
 }
 
