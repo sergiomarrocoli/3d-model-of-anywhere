@@ -6,6 +6,7 @@ import { createFlyCamera } from './flycam.js';
 import { createGameCamera } from './gamecam.js';
 import { sampleHeight } from './heightmap.js';
 import { rayHeightfield, stepPlayer } from './player.js';
+import { buildCollisionGrid, resolveCircle, insideBuilding } from './collision.js';
 import { zRef } from './coords.js';
 
 const $ = (id) => document.getElementById(id);
@@ -62,7 +63,12 @@ async function main() {
     nose.position.set(0, 0.4, 0.5); player.add(nose); // shows which way the player faces (+Z at heading 0)
     const groundY = (x, z) => sampleHeight(heightmap, x, -z) - ref; // world X/Z -> ground height (Y)
     const me = { x: W / 2, z: -H / 2, vx: 0, vz: 0, heading: 0 };
+    const solid = buildCollisionGrid(buildings);
+    window.__solid = { solid, resolveCircle, insideBuilding }; // console poking
+    // Start in the open: nudge out of any building at the centre.
+    Object.assign(me, ((r) => ({ x: r.x, z: -r.y }))(resolveCircle(solid, me.x, -me.z)));
     let target = null;
+    const stuck = { d: Infinity, t: 0 };
     const marker = new THREE.Mesh(new THREE.RingGeometry(0.5, 0.7, 24).rotateX(-Math.PI / 2),
       new THREE.MeshBasicMaterial({ color: 0xffd23f, depthTest: false, transparent: true }));
     marker.renderOrder = 10; marker.visible = false;
@@ -78,12 +84,24 @@ async function main() {
       const hit = rayHeightfield(ray.ray.origin, ray.ray.direction, groundY, { step: 2 });
       if (!hit) return;
       target = { x: Math.min(Math.max(hit.x, 0), W), z: Math.min(Math.max(hit.z, -H), 0) };
+      if (insideBuilding(solid, target.x, -target.z)) { const t = resolveCircle(solid, target.x, -target.z); target = { x: t.x, z: -t.y }; } // clicked a roof: walk to its wall
       marker.position.set(target.x, groundY(target.x, target.z) + 0.15, target.z);
-      marker.visible = true;
+      marker.visible = true; stuck.d = Infinity; stuck.t = 0;
     });
 
     tick = (dt) => {
       stepPlayer(me, target, dt);
+      const fixed = resolveCircle(solid, me.x, -me.z); // buildings are solid; wall contact slides along the wall
+      const px = fixed.x - me.x, pz = -fixed.y - me.z, pl = Math.hypot(px, pz);
+      if (pl > 1e-6) { // drop the velocity component that pushed into the wall so we slide rather than jitter
+        const vn = (me.vx * px + me.vz * pz) / pl;
+        if (vn < 0) { me.vx -= (vn * px) / pl; me.vz -= (vn * pz) / pl; }
+      }
+      me.x = fixed.x; me.z = -fixed.y;
+      if (target) { // give up if a wall blocks the way and we make no progress for half a second
+        const d = Math.hypot(me.x - target.x, me.z - target.z);
+        if (d < stuck.d - 0.05) { stuck.d = d; stuck.t = 0; } else if ((stuck.t += dt) > 0.5) { target = null; marker.visible = false; }
+      } else { stuck.d = Infinity; stuck.t = 0; }
       if (target && !me.moving && Math.hypot(me.x - target.x, me.z - target.z) < 0.3) { target = null; marker.visible = false; }
       player.position.set(me.x, groundY(me.x, me.z) + 0.9, me.z); // ground following (bilinear heightmap)
       player.rotation.y = me.heading;
