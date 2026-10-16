@@ -101,7 +101,7 @@ def main(argv=None):
     g = ap.add_mutually_exclusive_group(required=True)
     g.add_argument("--bbox", type=float, nargs=4, metavar=("MINE", "MINN", "MAXE", "MAXN"), help="EPSG:27700 metres")
     g.add_argument("--centre", type=float, nargs=2, metavar=("E", "N"), help="centre of a --size box, EPSG:27700")
-    ap.add_argument("--size", type=float, default=500, help="box edge in metres for --centre (default 500)")
+    ap.add_argument("--size", type=float, default=1000, help="box edge in metres for --centre (default 1000, i.e. 4x the 500 m prototype area)")
     ap.add_argument("--id", required=True, help="area id; bundle goes to <out>/area_<id>/")
     ap.add_argument("--out", default="data/bundles")
     ap.add_argument("--dtm-file", nargs="+", help="GeoTIFF DTM tiles (EPSG:27700) to use instead of EA LiDAR, e.g. NRW tiles")
