@@ -6,6 +6,7 @@ import { createFlyCamera } from './flycam.js';
 import { createGameCamera } from './gamecam.js';
 import { sampleHeight } from './heightmap.js';
 import { rayHeightfield, stepPlayer } from './player.js';
+import { clampToBox } from './edge.js';
 import { resolveSlope, speedFactor } from './slope.js';
 import { buildCollisionGrid, resolveCircle, insideBuilding } from './collision.js';
 import { zRef } from './coords.js';
@@ -29,7 +30,8 @@ async function main() {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x14161a);
+  const BG = new THREE.Color(0x14161a);
+  scene.background = BG;
   const terrain = buildTerrain(meta, heightmap, imagery, renderer);
   scene.add(terrain);
   scene.add(buildBuildings(meta, buildings, terrain.material.map)); // roofs share the terrain's imagery texture
@@ -100,7 +102,7 @@ async function main() {
       ray.setFromCamera(new THREE.Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1), camera);
       const hit = rayHeightfield(ray.ray.origin, ray.ray.direction, groundY, { step: 2 });
       if (!hit) return;
-      target = { x: Math.min(Math.max(hit.x, 0), W), z: Math.min(Math.max(hit.z, -H), 0) };
+      target = clampToBox(hit.x, hit.z, W, H);
       if (insideBuilding(solid, target.x, -target.z)) { const t = resolveCircle(solid, target.x, -target.z); target = { x: t.x, z: -t.y }; } // clicked a roof: walk to its wall
       marker.position.set(target.x, groundY(target.x, target.z) + 0.15, target.z);
       marker.visible = true; stuck.d = Infinity; stuck.t = 0;
@@ -121,7 +123,8 @@ async function main() {
         const vn = (me.vx * px + me.vz * pz) / pl;
         if (vn < 0) { me.vx -= (vn * px) / pl; me.vz -= (vn * pz) / pl; }
       }
-      me.x = fixed.x; me.z = -fixed.y;
+      const inBox = clampToBox(fixed.x, -fixed.y, W, H); // hard stop at the box edge (walkable right up to 0 m)
+      me.x = inBox.x; me.z = inBox.z;
       if (target) { // give up if a wall blocks the way and we make no progress for half a second
         const d = Math.hypot(me.x - target.x, me.z - target.z);
         if (d < stuck.d - 0.05) { stuck.d = d; stuck.t = 0; } else if ((stuck.t += dt) > 0.5) { target = null; marker.visible = false; }
