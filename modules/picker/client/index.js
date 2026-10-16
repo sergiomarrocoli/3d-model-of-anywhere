@@ -152,3 +152,20 @@ export function mountPickerPage(root, { onBuild = null, initial = null } = {}) {
   };
   return picker;
 }
+
+/**
+ * Flow step: shows the picker page in host.root and resolves when the user presses Build, adding the box to the
+ * context as ctx.bbox ([minE, minN, maxE, maxN], whole metres) and ctx.box ({ minE, minN, maxE, maxN }).
+ */
+export const pickStep = {
+  name: 'pick',
+  run: (ctx, host) => new Promise((resolve) => {
+    const picker = mountPickerPage(host.root, {
+      initial: ctx.box ?? null,
+      onBuild: (box) => {
+        picker.destroy(); host.root.innerHTML = ''; host.root.className = '';
+        resolve({ ...ctx, box, bbox: boxBBox(box).map(Math.round) });
+      },
+    });
+  }),
+};

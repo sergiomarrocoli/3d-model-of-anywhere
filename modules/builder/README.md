@@ -48,4 +48,21 @@ modules/builder/server/   service.py   the logic: validation, ids, cache, queue,
 ```
 
 Needs the pipeline's Python dependencies (`pipeline/requirements.txt`) and no others. Tests: `python3 -m pytest` from the
-repo root. The client side (calling it from the picker) is the next story.
+repo root.
+
+## Client half
+
+```js
+import { buildArea, buildStep } from '@builder';
+const { id, bundleUrl } = await buildArea([minE, minN, maxE, maxN], { onProgress: (job) => ... });  // POSTs, then polls
+```
+
+`buildArea` takes a box and gives back a bundle URL; it knows nothing about the picker or the game. A dropped poll is
+retried, a refused or failed build becomes a readable error, the wait can be aborted (the build carries on and is cached).
+`buildStep` is the same as a flow step (see `../README.md`): it needs `ctx.bbox`, shows a progress bar (queue position,
+then terrain, buildings, imagery), and adds `ctx.area` and `ctx.bundleUrl`; on failure it shows the reason and **Try again**.
+
+## Reaching the service
+
+`/api` is forwarded to it by the dev server (`npm run dev`) and by the game server (`npm run share`, port 8788 by default or
+`BUILDER_URL`), so friends using a shared link can build areas too, within the limits above.
