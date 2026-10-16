@@ -14,6 +14,9 @@ modules/picker/client/
   picker.css
 ```
 
+The box moves three ways: drag its body, **click anywhere on the map** to put it there (size kept; clicks on the box or a
+handle do not count), or press **Move the box to the middle of the map** after panning away.
+
 Open it in the game with `?pick` (a "pick area" link sits in the top bar). It shows the box size and centre, warns if
 the box leaves the Ordnance Survey grid (the data sources only cover Great Britain), remembers the last box, and shows the
 `python3 -m pipeline.build_area --bbox ...` command that builds it. The **Build this area** button calls `onBuild(box)`; it
