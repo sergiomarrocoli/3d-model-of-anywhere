@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 
 export const TILT_DEG = 60;      // degrees above horizontal
-export const VIEW_WIDTH_M = 50;  // metres across the screen at the focus point
-const DISTANCE = 400;            // far from the scene so the ortho near/far never clip it
+export const VIEW_WIDTH_M = 150; // metres across the screen at the focus point (3x the original 50 m)
+export const MIN_VIEW_M = 10, MAX_VIEW_M = 3000;
+export const MIN_TILT_DEG = 20, MAX_TILT_DEG = 90;
+const DISTANCE = 1500;           // far from the scene so the ortho near/far never clip it, even zoomed right out
 
 /** Offset from the target to the camera: due south and up, so north is always "up" the screen. */
 export function cameraOffset(tiltDeg = TILT_DEG, distance = DISTANCE) {
@@ -21,17 +23,27 @@ export function frustum(aspect, viewWidth = VIEW_WIDTH_M) {
  * covers s * sin(tilt) metres of screen height.
  */
 export function createGameCamera({ aspect = 1, viewWidth = VIEW_WIDTH_M, tiltDeg = TILT_DEG } = {}) {
-  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, DISTANCE * 3);
-  const offset = cameraOffset(tiltDeg);
-  const state = { viewWidth };
-  const setAspect = (a) => {
-    const { halfW, halfH } = frustum(a, state.viewWidth);
+  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, DISTANCE * 4);
+  const state = { viewWidth, tiltDeg, aspect };
+  let offset = cameraOffset(state.tiltDeg);
+  const target = new THREE.Vector3();
+  const place = () => { camera.position.copy(target).add(offset); };
+  const orient = () => { // rotation depends only on the tilt, so it is only recomputed when the tilt changes
+    offset = cameraOffset(state.tiltDeg);
+    camera.position.copy(offset);
+    camera.lookAt(0, 0, 0);
+    place();
+  };
+  const refresh = () => {
+    const { halfW, halfH } = frustum(state.aspect, state.viewWidth);
     Object.assign(camera, { left: -halfW, right: halfW, top: halfH, bottom: -halfH });
     camera.updateProjectionMatrix();
   };
-  camera.position.copy(offset);
-  camera.lookAt(0, 0, 0); // rotation is set once and never touched again
-  const follow = (target) => { camera.position.copy(target).add(offset); };
-  setAspect(aspect);
-  return { camera, follow, setAspect, state };
+  const setAspect = (a) => { state.aspect = a; refresh(); };
+  /** factor > 1 zooms out, < 1 zooms in (multiplicative, so every wheel notch feels the same at any distance). */
+  const zoomBy = (factor) => { state.viewWidth = Math.min(MAX_VIEW_M, Math.max(MIN_VIEW_M, state.viewWidth * factor)); refresh(); };
+  const tiltBy = (deg) => { state.tiltDeg = Math.min(MAX_TILT_DEG, Math.max(MIN_TILT_DEG, state.tiltDeg + deg)); orient(); };
+  const follow = (t) => { target.copy(t); place(); };
+  orient(); refresh();
+  return { camera, follow, setAspect, zoomBy, tiltBy, state };
 }
