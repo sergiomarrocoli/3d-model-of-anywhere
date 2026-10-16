@@ -3,6 +3,8 @@
 Usage: python3 -m pipeline.buildings --bbox 375000 164500 375500 165000 --out data/buildings.geojson
 """
 import argparse
+import hashlib
+import json
 import time
 from pathlib import Path
 
@@ -21,6 +23,8 @@ OVERPASS_URLS = [
 ]
 ATTRIBUTION = "© OpenStreetMap contributors (ODbL)"
 CRS = "EPSG:27700"
+CACHE_DIR = Path("data/cache/overpass")
+CACHE_TTL_S = 7 * 24 * 3600  # building footprints change slowly; this keeps repeat builds off the public servers
 KEEP_TAGS = ("building", "height", "building:levels")
 
 
@@ -47,7 +51,24 @@ def _rings(el, nodes_by_id=None):
     return [shell.difference(unary_union(inners)) if inners else shell]
 
 
-def _overpass(query):
+class _Cached:
+    """Stands in for a requests response when the answer came from the disk cache."""
+
+    def __init__(self, text):
+        self.text = text
+
+    def json(self):
+        return json.loads(self.text)
+
+
+def _overpass(query, cache_dir=None, ttl=None):
+    """POST an Overpass query, with a disk cache keyed by the query text so the same area is asked for once a week."""
+    cache_dir = Path(CACHE_DIR if cache_dir is None else cache_dir)
+    ttl = CACHE_TTL_S if ttl is None else ttl
+    cached = cache_dir / (hashlib.sha1(query.encode()).hexdigest() + ".json")
+    if cached.exists() and time.time() - cached.stat().st_mtime < ttl:
+        return _Cached(cached.read_text())
+
     errors = []
     for attempt in range(3):
         for url in OVERPASS_URLS:
@@ -56,6 +77,10 @@ def _overpass(query):
                                      headers={"User-Agent": "civil-war-prototype (github.com/sergiomarrocoli/civil-war)"})
                 resp.raise_for_status()
                 resp.json()
+                cache_dir.mkdir(parents=True, exist_ok=True)
+                tmp = cached.with_suffix(".tmp")
+                tmp.write_text(resp.text)
+                tmp.replace(cached)  # atomic, so a half-written file is never read
                 return resp
             except (requests.RequestException, ValueError) as exc:
                 errors.append(f"{url}: {type(exc).__name__}")

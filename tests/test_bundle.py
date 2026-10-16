@@ -83,3 +83,10 @@ def test_surfacemap_written_from_dsm(tmp_path, inputs):
     # a rebuild without a DSM removes the stale surfacemap and meta entry
     root = write_bundle(tmp_path, "t5", dtm, img, b, [])
     assert not (root / "surfacemap.png").exists() and "surfacemap" not in json.loads((root / "meta.json").read_text())
+
+
+def test_meta_records_the_pipeline_version(tmp_path, inputs):
+    from pipeline import PIPELINE_VERSION
+    dtm, img, b, _ = inputs
+    meta = json.loads((write_bundle(tmp_path, "t6", dtm, img, b, []) / "meta.json").read_text())
+    assert meta["pipeline_version"] == PIPELINE_VERSION

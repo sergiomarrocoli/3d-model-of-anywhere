@@ -38,6 +38,9 @@ export default defineConfig({
     dedupe: ['three', 'fast-png', 'maplibre-gl', 'proj4'],
   },
   // In dev, /ws goes to the presence server (`npm start` in ../modules/presence/server); without it the game is single player.
-  server: { fs: { allow: ['..'] }, proxy: { '/ws': { target: 'ws://localhost:8787', ws: true, changeOrigin: true } } },
+  server: { fs: { allow: ['..'] }, proxy: {
+      '/ws': { target: 'ws://localhost:8787', ws: true, changeOrigin: true },
+      '/api': { target: 'http://127.0.0.1:8788', changeOrigin: true }, // the build service: python3 modules/builder/server/serve.py
+    } },
   test: { include: ['test/**/*.test.js', '../modules/*/client/test/**/*.test.js'] },
 });
