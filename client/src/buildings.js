@@ -16,55 +16,32 @@ export const ROOF_INSET_M = 1.5;       // within this distance of the footprint 
 export const MIN_ROOF_ABOVE_BASE_M = 2;
 const MAX_REFINE_PASSES = 10;
 
-// Wall detail: a brick pattern multiplied over the per-wall imagery colour, so walls keep their sampled colours
-// but read as masonry instead of smooth vertical bands. Stylised at about twice real brick size so it shows
-// at game zoom. Detail UVs are in tile units: along the wall (continuous across the corners of one wall) and up.
-export const WALL_TILE_M = [0.86, 0.52];   // one texture tile: 2 bricks across, 4 courses up
-const BRICKS_ACROSS = 2, COURSES = 4;
+// Wall texture: instead of one colour per vertical band, each wall is a random patchwork of all the colours found
+// along that wall's footprint edge. The fragment shader splits the wall into WALL_PATCH_M cells and gives each cell a
+// pseudo-random position along the edge, then looks the colour up in the imagery there. Cells are addressed in metres
+// along the wall and up it, so patches are continuous across the pieces a wall is split into.
+export const WALL_PATCH_M = 0.5;
 
-/** Greyscale brick tile (RGBA bytes, mean about 1.0 when read as a multiplier) with a seeded per-brick tone. */
-export function brickTileData(size = 128, seed = 7) {
-  const data = new Uint8Array(size * size * 4);
-  const rnd = (i, j) => { let h = (i * 374761393 + j * 668265263 + seed * 2147483647) >>> 0; h = (h ^ (h >>> 13)) * 1274126177 >>> 0; return ((h ^ (h >>> 16)) >>> 0) / 4294967295; };
-  const ch = size / COURSES, bw = size / BRICKS_ACROSS, mortar = Math.max(2, Math.round(size / 48));
-  for (let py = 0; py < size; py++) {
-    const course = Math.floor(py / ch), inCourse = py - course * ch;
-    const shift = course % 2 ? bw / 2 : 0;                       // running bond
-    for (let px = 0; px < size; px++) {
-      const bx = (px + shift) % size, brick = Math.floor(bx / bw), inBrick = bx - brick * bw;
-      const edge = inCourse < mortar || inBrick < mortar;
-      const tone = 0.82 + 0.36 * rnd(brick + (course % 2 ? 100 : 0), course); // 0.82..1.18 per brick
-      const v = edge ? 0.62 : tone;
-      const o = (py * size + px) * 4;
-      data[o] = data[o + 1] = data[o + 2] = Math.max(0, Math.min(255, Math.round(v * 255 * 0.9))); data[o + 3] = 255;
-    }
-  }
-  return data;
-}
-
-export function wallDetailTexture(renderer = null) {
-  const size = 128;
-  const tex = new THREE.DataTexture(brickTileData(size), size, size, THREE.RGBAFormat);
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.magFilter = THREE.LinearFilter; tex.minFilter = THREE.LinearMipmapLinearFilter; tex.generateMipmaps = true;
-  tex.anisotropy = renderer ? renderer.capabilities.getMaxAnisotropy() : 1;
-  tex.needsUpdate = true;
-  return tex;
-}
-
-/** Multiply a lit material's diffuse colour by a tiled detail texture addressed by the `detailUv` attribute. */
-export function addWallDetail(material, detailTex, strength = 1) {
+/** Patchwork walls: needs the `wallDetail` (along metres, elevation metres) and `wallEdge` (edge start uv, end uv) attributes. */
+export function addWallPatchwork(material, patchM = WALL_PATCH_M) {
   material.onBeforeCompile = (shader) => {
-    shader.uniforms.uDetail = { value: detailTex };
-    shader.uniforms.uDetailStrength = { value: strength };
+    shader.uniforms.uPatchM = { value: patchM };
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec2 detailUv;\nvarying vec2 vDetailUv;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvDetailUv = detailUv;');
+      .replace('#include <common>', '#include <common>\nattribute vec2 wallDetail;\nattribute vec4 wallEdge;\nvarying vec2 vWallDetail;\nvarying vec4 vWallEdge;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWallDetail = wallDetail;\nvWallEdge = wallEdge;');
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying vec2 vDetailUv;\nuniform sampler2D uDetail;\nuniform float uDetailStrength;')
-      .replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb *= mix(vec3(1.0), texture2D(uDetail, vDetailUv).rgb, uDetailStrength);');
+      .replace('#include <common>', `#include <common>
+        varying vec2 vWallDetail;
+        varying vec4 vWallEdge;
+        uniform float uPatchM;
+        float wallHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }`)
+      .replace('#include <map_fragment>', `
+        vec2 wallCell = floor(vWallDetail / uPatchM);
+        float wallT = wallHash(wallCell + vWallEdge.xy * 1000.0);
+        vec4 sampledDiffuseColor = texture2D(map, mix(vWallEdge.xy, vWallEdge.zw, wallT));
+        diffuseColor *= sampledDiffuseColor;`);
   };
-  material.customProgramCacheKey = () => 'walldetail';
+  material.customProgramCacheKey = () => 'wallpatchwork';
   material.needsUpdate = true;
 }
 
@@ -150,7 +127,7 @@ function refineTriangles(verts, tris, maxLen) {
  */
 export function buildBuildingGeometry(meta, buildings, surface = null) {
   const [W, H] = meta.size_m;
-  const wp = [], wn = [], wuv = [], wdt = [], wi = [];
+  const wp = [], wn = [], wuv = [], wdt = [], wedge = [], wi = [];
   const rp = [], rn = [], ruv = [], ri = [];
 
   for (const f of buildings.features) {
@@ -189,11 +166,13 @@ export function buildBuildingGeometry(meta, buildings, surface = null) {
           for (let n = 0; n < 4; n++) wn.push(nx, 0, nz);
           const a = [(x0 + sx) / W, 1 - (y0 + sy) / H], b = [(x1 + sx) / W, 1 - (y1 + sy) / H];
           wuv.push(...a, ...b, ...b, ...a); // same UV top and bottom: colour is constant up each wall
-          // Detail UVs in tile units: distance along this wall (from its first corner) and absolute elevation.
+          // Patchwork inputs: metres along this wall (from its first corner) and elevation, plus the imagery UVs
+          // of the whole edge's two ends, so every piece of a wall draws from the same colours.
           const ux = (p1[0] - p0[0]) / len, uy = (p1[1] - p0[1]) / len;
-          const along = (x, y) => ((x - p0[0]) * ux + (y - p0[1]) * uy) / WALL_TILE_M[0];
-          const up = (z) => z / WALL_TILE_M[1];
-          wdt.push(along(x0, y0), up(base), along(x1, y1), up(base), along(x1, y1), up(roofZ(x1, y1)), along(x0, y0), up(roofZ(x0, y0)));
+          const along = (x, y) => (x - p0[0]) * ux + (y - p0[1]) * uy;
+          wdt.push(along(x0, y0), base, along(x1, y1), base, along(x1, y1), roofZ(x1, y1), along(x0, y0), roofZ(x0, y0));
+          const eA = [(p0[0] + sx) / W, 1 - (p0[1] + sy) / H], eB = [(p1[0] + sx) / W, 1 - (p1[1] + sy) / H];
+          for (let n = 0; n < 4; n++) wedge.push(...eA, ...eB);
           wi.push(k, k + 1, k + 2, k, k + 2, k + 3);
         }
       }
@@ -226,7 +205,8 @@ export function buildBuildingGeometry(meta, buildings, surface = null) {
     return g;
   };
   const wallGeo = make(wp, wn, wuv, wi);
-  wallGeo.setAttribute('detailUv', new THREE.Float32BufferAttribute(wdt, 2));
+  wallGeo.setAttribute('wallDetail', new THREE.Float32BufferAttribute(wdt, 2));
+  wallGeo.setAttribute('wallEdge', new THREE.Float32BufferAttribute(wedge, 4));
   return { walls: wallGeo, roofs: make(rp, rn, ruv, ri) };
 }
 
@@ -234,7 +214,7 @@ export function buildBuildings(meta, buildings, imageryTex, surface = null, rend
   const { walls, roofs } = buildBuildingGeometry(meta, buildings, surface);
   const group = new THREE.Group(); group.name = 'buildings';
   const wallMat = new THREE.MeshLambertMaterial({ map: imageryTex, color: new THREE.Color().setRGB(WALL_BRIGHTNESS, WALL_BRIGHTNESS, WALL_BRIGHTNESS, THREE.SRGBColorSpace) });
-  addWallDetail(wallMat, wallDetailTexture(renderer));
+  addWallPatchwork(wallMat);
   const wallMesh = new THREE.Mesh(walls, wallMat);
   const roofMesh = new THREE.Mesh(roofs, new THREE.MeshBasicMaterial({ map: imageryTex, side: THREE.DoubleSide }));
   wallMesh.name = 'walls'; roofMesh.name = 'roofs';
