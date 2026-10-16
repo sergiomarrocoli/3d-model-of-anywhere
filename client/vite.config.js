@@ -27,4 +27,9 @@ function bundlesPlugin() {
   return { name: 'serve-bundles', configureServer(s) { s.middlewares.use(handler); }, configurePreviewServer(s) { s.middlewares.use(handler); } };
 }
 
-export default defineConfig({ plugins: [bundlesPlugin()], test: { include: ['test/**/*.test.js'] } });
+// In dev, /ws goes to the game server (`npm start` in ../server) so friends can share a room; without it the game is single player.
+export default defineConfig({
+  plugins: [bundlesPlugin()],
+  server: { proxy: { '/ws': { target: 'ws://localhost:8787', ws: true, changeOrigin: true } } },
+  test: { include: ['test/**/*.test.js'] },
+});
