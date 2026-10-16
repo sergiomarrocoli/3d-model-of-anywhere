@@ -3,6 +3,7 @@
     area_<id>/
       meta.json          bbox, origin, sizes, heightmap encoding, attribution
       heightmap.png      16-bit greyscale DTM; metres = min + (v / 65535) * (max - min)
+      surfacemap.png     (optional) same encoding, LiDAR DSM on the DTM grid: ground + roofs + trees, never below the DTM
       imagery.jpg        orthophoto clipped to the bbox
       buildings.geojson  local metre coords (origin = SW corner); props: base_z, height, ...
       ATTRIBUTION.txt    credits for every source used
@@ -69,7 +70,19 @@ def _round(obj):
     return obj
 
 
-def write_bundle(out_dir, area_id, dtm_path, imagery_path, buildings, attributions):
+def surface_from_dsm(dsm_path, dtm_path, z_ground):
+    """DSM resampled onto the DTM grid, with gaps filled from the ground and never below it."""
+    from rasterio.warp import Resampling, reproject
+
+    with rasterio.open(dtm_path) as dtm, rasterio.open(dsm_path) as dsm:
+        out = np.full((dtm.height, dtm.width), np.nan, dtype="float64")
+        reproject(rasterio.band(dsm, 1), out, src_nodata=dsm.nodata, dst_transform=dtm.transform, dst_crs=dtm.crs,
+                  dst_nodata=np.nan, resampling=Resampling.bilinear)
+    out = np.where(np.isfinite(out), out, z_ground)
+    return np.maximum(out, z_ground)
+
+
+def write_bundle(out_dir, area_id, dtm_path, imagery_path, buildings, attributions, dsm_path=None):
     """Write a bundle into `out_dir/area_<area_id>/` and return its path.
 
     `dtm_path` and `imagery_path` must share one extent (EPSG:27700); `buildings` is a GeoDataFrame
@@ -90,6 +103,15 @@ def write_bundle(out_dir, area_id, dtm_path, imagery_path, buildings, attributio
 
     codes, z_min, z_max = encode_heightmap(z)
     Image.fromarray(codes).save(root / "heightmap.png")
+    surface = None
+    if dsm_path is not None:
+        zs = surface_from_dsm(dsm_path, dtm_path, z)
+        scodes, s_min, s_max = encode_heightmap(zs)
+        Image.fromarray(scodes).save(root / "surfacemap.png")
+        surface = {"file": "surfacemap.png", "width": dtm_size[0], "height": dtm_size[1], "resolution_m": res[0],
+                   "bits": 16, "min": s_min, "max": s_max}
+    elif (root / "surfacemap.png").exists():
+        (root / "surfacemap.png").unlink()  # stale file from an earlier build of this id
     Image.fromarray(rgb).save(root / "imagery.jpg", quality=90)
 
     origin = (b.left, b.bottom)
@@ -109,6 +131,7 @@ def write_bundle(out_dir, area_id, dtm_path, imagery_path, buildings, attributio
         "size_m": [b.right - b.left, b.top - b.bottom],
         "heightmap": {"file": "heightmap.png", "width": dtm_size[0], "height": dtm_size[1], "resolution_m": res[0],
                       "bits": 16, "min": z_min, "max": z_max},
+        **({"surfacemap": surface} if surface else {}),
         "imagery": {"file": "imagery.jpg", "width": img_size[0], "height": img_size[1]},
         "buildings": {"file": "buildings.geojson", "count": len(fc["features"]),
                       "coords": "local metres from the south-west corner"},

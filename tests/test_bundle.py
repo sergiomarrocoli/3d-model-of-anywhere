@@ -60,3 +60,26 @@ def test_rejects_mismatched_extent_and_nodata(tmp_path, inputs):
         encode_heightmap(np.array([[1.0, np.nan]]))
     with pytest.raises(ValueError, match="27700"):
         write_bundle(tmp_path, "t4", dtm, img, b.set_crs("EPSG:4326", allow_override=True), [])
+
+
+def test_surfacemap_written_from_dsm(tmp_path, inputs):
+    dtm, img, b, z = inputs
+    dsm_arr = z + 6.0                       # a uniform 6 m "roof" everywhere ...
+    dsm_arr[0, 0] = -9999                   # ... except a nodata pixel, filled from the ground
+    dsm_arr[1, 1] = z[1, 1] - 3             # and a pixel below ground, lifted to the ground
+    dsm = str(tmp_path / "dsm.tif")
+    with rasterio.open(dsm, "w", driver="GTiff", width=40, height=40, count=1, dtype="float32", nodata=-9999,
+                       crs="EPSG:27700", transform=from_origin(E0, N0 + 40, 1, 1)) as ds:
+        ds.write(dsm_arr.astype("float32")[None])
+    root = write_bundle(tmp_path, "t5", dtm, img, b, [], dsm)
+    meta = json.loads((root / "meta.json").read_text())
+    from pipeline.bundle import decode_heightmap
+    s = meta["surfacemap"]
+    zs = decode_heightmap(root / s["file"], s["min"], s["max"])
+    assert s["width"] == 40 and zs.shape == (40, 40)
+    assert zs[10, 10] == pytest.approx(z[10, 10] + 6, abs=0.01)
+    assert zs[0, 0] == pytest.approx(z[0, 0], abs=0.01)
+    assert zs[1, 1] == pytest.approx(z[1, 1], abs=0.01)
+    # a rebuild without a DSM removes the stale surfacemap and meta entry
+    root = write_bundle(tmp_path, "t5", dtm, img, b, [])
+    assert not (root / "surfacemap.png").exists() and "surfacemap" not in json.loads((root / "meta.json").read_text())
