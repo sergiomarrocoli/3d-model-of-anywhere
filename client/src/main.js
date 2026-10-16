@@ -10,7 +10,7 @@ import { buildStep } from '@builder';
 import { createFlyCamera, debugMain, listMaps, loadMap } from '@map';
 import { startPresence } from '@presence';
 import { startWalker } from '@walker';
-import { FlowError, parseFlow, runFlow } from './flow.js';
+import { FlowError, parseFlow, runFlow, urlAfterBuild } from './flow.js';
 
 const $ = (id) => document.getElementById(id);
 const DEFAULT_AREA = 'newtown';
@@ -62,7 +62,7 @@ async function main() {
     build: buildStep,
     play: { name: 'play', async run(ctx) {
       const id = ctx.area ?? area;
-      if (ctx.area) history.replaceState(null, '', `?area=${id}`);   // a refresh now plays this area
+      if (ctx.bundleUrl) history.replaceState(null, '', urlAfterBuild(location.href, id));   // an area was just built: a refresh plays it
       $('flow').hidden = true; document.body.classList.remove('flow');
       await playGame({ area: id, overlay: ctx.overlay ?? null });
       return { ...ctx, area: id };

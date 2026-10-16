@@ -36,3 +36,10 @@ export async function runFlow(names, registry, ctx = {}, makeHost = () => ({})) 
   }
   return ctx;
 }
+
+/** The page URL once an area has been built: plays that area on refresh, keeps other params (?fly, ?room, ?name), drops the flow. */
+export function urlAfterBuild(href, areaId) {
+  const u = new URL(href);
+  u.searchParams.set('area', areaId); u.searchParams.delete('pick'); u.searchParams.delete('flow');
+  return u.href;
+}

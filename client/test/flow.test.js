@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_FLOW, FlowError, PICK_FLOW, parseFlow, runFlow } from '../src/flow.js';
+import { DEFAULT_FLOW, FlowError, PICK_FLOW, parseFlow, runFlow, urlAfterBuild } from '../src/flow.js';
 
 const known = ['pick', 'build', 'track', 'play'];
 const q = (s) => new URLSearchParams(s);
@@ -59,5 +59,18 @@ describe('runFlow', () => {
   });
   it('rejects a step that is not registered', async () => {
     await expect(runFlow(['nope'], {})).rejects.toBeInstanceOf(FlowError);
+  });
+});
+
+describe('urlAfterBuild', () => {
+  it('points at the built area and drops the flow, keeping every other param', () => {
+    const u = new URL(urlAfterBuild('http://x/?pick&fly&room=friends&name=Ann', 'e1n2w300h300'));
+    expect(u.searchParams.get('area')).toBe('e1n2w300h300');
+    expect(u.searchParams.has('pick')).toBe(false); expect(u.searchParams.has('flow')).toBe(false);
+    expect(u.searchParams.has('fly')).toBe(true); expect(u.searchParams.get('room')).toBe('friends'); expect(u.searchParams.get('name')).toBe('Ann');
+  });
+  it('replaces an existing area and handles ?flow=', () => {
+    const u = new URL(urlAfterBuild('http://x/?area=old&flow=pick,build,play', 'new'));
+    expect(u.search).toBe('?area=new');
   });
 });
