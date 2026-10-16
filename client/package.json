@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "test": "vitest run",
-    "share": "vite build && node ../server/index.js"
+    "share": "vite build && node ../modules/presence/server/index.js"
   },
   "dependencies": {
     "fast-png": "^8.0.0",

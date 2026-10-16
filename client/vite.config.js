@@ -4,6 +4,7 @@ import { defineConfig } from 'vite';
 
 // Serves the pipeline's output (../data/bundles) at /bundles/, plus /bundles/index.json listing the areas.
 const bundlesDir = path.resolve(import.meta.dirname, '../data/bundles');
+const modulesDir = path.resolve(import.meta.dirname, '../modules');
 
 function bundlesPlugin() {
   const handler = (req, res, next) => {
@@ -28,8 +29,12 @@ function bundlesPlugin() {
 }
 
 // In dev, /ws goes to the game server (`npm start` in ../server) so friends can share a room; without it the game is single player.
+// Feature modules live in ../modules/<name>/ (client/ and server/ halves). They are imported by alias, and three.js is
+// resolved from this project so a module does not need its own copy.
 export default defineConfig({
   plugins: [bundlesPlugin()],
-  server: { proxy: { '/ws': { target: 'ws://localhost:8787', ws: true, changeOrigin: true } } },
-  test: { include: ['test/**/*.test.js'] },
+  resolve: { alias: { '@presence': path.join(modulesDir, 'presence/client/index.js') }, dedupe: ['three'] },
+  // In dev, /ws goes to the presence server (`npm start` in ../modules/presence/server); without it the game is single player.
+  server: { fs: { allow: ['..'] }, proxy: { '/ws': { target: 'ws://localhost:8787', ws: true, changeOrigin: true } } },
+  test: { include: ['test/**/*.test.js', '../modules/*/client/test/**/*.test.js'] },
 });
