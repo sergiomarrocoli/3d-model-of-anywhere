@@ -25,10 +25,11 @@ export async function loadBundle(baseUrl, { fetchImpl = fetch, loadImage = brows
   const base = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
   const meta = await (await fetchOk(`${base}meta.json`, fetchImpl)).json();
   if (meta.version !== 1) throw new Error(`unsupported bundle version ${meta.version}`);
-  const [pngBuf, imgBlob, buildings] = await Promise.all([
+  const [pngBuf, imgBlob, buildings, surfBuf] = await Promise.all([
     fetchOk(base + meta.heightmap.file, fetchImpl).then((r) => r.arrayBuffer()),
     fetchOk(base + meta.imagery.file, fetchImpl).then((r) => r.blob()),
     fetchOk(base + meta.buildings.file, fetchImpl).then((r) => r.json()),
+    meta.surfacemap ? fetchOk(base + meta.surfacemap.file, fetchImpl).then((r) => r.arrayBuffer()) : null, // optional LiDAR DSM
   ]);
   if (buildings.type !== 'FeatureCollection' || buildings.features.length !== meta.buildings.count) {
     throw new Error(`buildings file does not match meta (${buildings.features?.length} vs ${meta.buildings.count})`);
@@ -36,6 +37,7 @@ export async function loadBundle(baseUrl, { fetchImpl = fetch, loadImage = brows
   return {
     meta,
     heightmap: decodeHeightmap(new Uint8Array(pngBuf), meta.heightmap),
+    surface: surfBuf ? decodeHeightmap(new Uint8Array(surfBuf), meta.surfacemap) : null,
     imagery: await loadImage(imgBlob),
     buildings,
   };

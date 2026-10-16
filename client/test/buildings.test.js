@@ -103,3 +103,56 @@ describe('wall brightness', () => {
     expect(roofs.material.color.getHex()).toBe(0xffffff); // roofs untouched
   });
 });
+
+describe('pitched roofs from a surface map', () => {
+  // 100x100 m, 1 m cells, absolute elevations. A gable running east-west over y 20..40 (ridge at y = 30):
+  // eaves at 20 m, ridge at 26 m, ground elsewhere at 12 m.
+  const n = 100, data = new Float32Array(n * n);
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) {
+    const y = n - r - 0.5, x = c + 0.5;
+    data[r * n + c] = x >= 10 && x <= 50 && y >= 20 && y <= 40 ? 26 - 6 * (Math.abs(y - 30) / 10) : 12;
+  }
+  const surface = { width: n, height: n, resolution: 1, data };
+  const house = poly([sq(10, 20, 50, 40)], { base_z: 12, height: 10 });
+  const { walls, roofs } = buildBuildingGeometry(meta, fc(house), surface);
+  const ys = (g) => [...g.getAttribute('position').array].filter((_, i) => i % 3 === 1);
+
+  it('follows the ridge: highest in the middle, eaves lower, floored above the base', () => {
+    const p = roofs.getAttribute('position');
+    let ridge = -Infinity, eave = Infinity;
+    for (let i = 0; i < p.count; i++) {
+      const y = -p.getZ(i); // local y
+      if (Math.abs(y - 30) < 0.01) ridge = Math.max(ridge, p.getY(i));
+      if (Math.abs(y - 20) < 0.01 || Math.abs(y - 40) < 0.01) eave = Math.min(eave, p.getY(i));
+    }
+    expect(ridge).toBeCloseTo(26 - 10, 0);   // minus zRef 10
+    expect(eave).toBeLessThan(ridge - 3);
+    expect(Math.min(...ys(roofs))).toBeGreaterThanOrEqual(2 - 1e-6 + 0); // base 12 + 2 - zRef 10
+  });
+  it('is refined to small triangles that still cover the footprint and face up', () => {
+    const t = tris(roofs);
+    expect(t.length).toBeGreaterThan(100);
+    expect(t.reduce((s, tr) => s + area(tr), 0)).toBeGreaterThan(40 * 20 - 1e-6);   // pitched, so slightly more than the plan area
+    const plan = (tr) => { const [a, b, c] = tr; return Math.abs((b[0] - a[0]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[0] - a[0])) / 2; };
+    expect(t.reduce((s, tr) => s + plan(tr), 0)).toBeCloseTo(800, 3);
+    for (const tr of t) expect(faceNormal(tr)[1]).toBeGreaterThan(0);
+    for (const tr of t) for (let i = 0; i < 3; i++) { const a = tr[i], b = tr[(i + 1) % 3]; expect(Math.hypot(a[0] - b[0], a[2] - b[2])).toBeLessThanOrEqual(2 + 1e-9); }
+  });
+  it('has no cracks: every wall top point is a roof vertex at the same height', () => {
+    const rp = roofs.getAttribute('position'), wp = walls.getAttribute('position');
+    const key = (x, y, z) => `${x.toFixed(4)},${y.toFixed(4)},${z.toFixed(4)}`;
+    const roofPts = new Set(); for (let i = 0; i < rp.count; i++) roofPts.add(key(rp.getX(i), rp.getY(i), rp.getZ(i)));
+    let tops = 0;
+    for (let q = 0; q < wp.count; q += 4) for (const c of [2, 3]) { tops++; expect(roofPts.has(key(wp.getX(q + c), wp.getY(q + c), wp.getZ(q + c)))).toBe(true); }
+    expect(tops).toBeGreaterThan(40);
+  });
+  it('no surface: unchanged flat roof', () => {
+    const flat = buildBuildingGeometry(meta, fc(house)).roofs;
+    expect(new Set(ys(flat))).toEqual(new Set([12])); expect(tris(flat)).toHaveLength(2);
+  });
+  it('caps tree-like spikes and keeps footprints on a gap in the data', () => {
+    const spike = { ...surface, data: data.map((v, i) => (i % 7 === 0 ? 200 : v)) };
+    const cap = 12 + 2 * 10 + 2 - 10; // base + 2h + 2 - zRef
+    expect(Math.max(...ys(buildBuildingGeometry(meta, fc(house), spike).roofs))).toBeLessThanOrEqual(cap + 1e-6);
+  });
+});

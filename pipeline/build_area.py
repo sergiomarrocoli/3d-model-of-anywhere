@@ -90,7 +90,7 @@ def build_area(bbox, area_id, out_dir="data/bundles", dtm_files=None, dtm_attrib
     _log("Imagery fetched")
 
     # 4. Bundle
-    root = bundle.write_bundle(out_dir, area_id, w / "dtm.tif", img, b, credits)
+    root = bundle.write_bundle(out_dir, area_id, w / "dtm.tif", img, b, credits, dsm_path)
     summary["bundle"] = str(root)
     _log(f"Wrote {root}")
     return summary

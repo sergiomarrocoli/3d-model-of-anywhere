@@ -44,4 +44,10 @@ describe('loadBundle', () => {
     await expect(loadBundle('/x', opts(files({ 'b.geojson': JSON.stringify({ type: 'FeatureCollection', features: [] }) })))).rejects.toThrow(/does not match/);
     await expect(loadBundle('/x', opts(files({ 'meta.json': JSON.stringify({ ...meta, version: 2 }) })))).rejects.toThrow(/version/);
   });
+  it('has no surface unless the meta declares a surfacemap, and decodes it when it does', async () => {
+    expect((await loadBundle('/x', opts(files()))).surface).toBeNull();
+    const withSurface = files({ 'meta.json': JSON.stringify({ ...meta, surfacemap: { file: 's.png', ...hm, min: 0, max: 65535 } }), 's.png': png16([0, 1, 2, 3, 4, 5]) });
+    const b = await loadBundle('/x', opts(withSurface));
+    expect(Array.from(b.surface.data)).toEqual([0, 1, 2, 3, 4, 5]);
+  });
 });
