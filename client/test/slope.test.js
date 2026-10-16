@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { slopeAt, canStep, resolveSlope, MAX_SLOPE } from '../src/slope.js';
+import { slopeAt, canStep, resolveSlope, speedFactor, MAX_SLOPE } from '../src/slope.js';
 
 // 100x100 heightmap, 1 m cells; height = f(x, y) at cell centres, rows north to south.
 const make = (f) => {
@@ -18,15 +18,25 @@ describe('slope', () => {
   });
   it('allows gentle slopes and blocks steep ones uphill', () => {
     expect(canStep(ramp(0.3), 40, 50, 41, 50)).toBe(true);
-    expect(canStep(ramp(2), 40, 50, 41, 50)).toBe(false);
+    expect(canStep(ramp(20), 40, 50, 41, 50)).toBe(false); // ~87 degrees
+    expect(canStep(ramp(2), 40, 50, 41, 50)).toBe(true); // 63 degrees: steep but walkable now
   });
   it('always allows going downhill, even on a steep slope (no trapping)', () => {
-    expect(canStep(ramp(2), 41, 50, 40, 50)).toBe(true);
+    expect(canStep(ramp(20), 41, 50, 40, 50)).toBe(true);
   });
   it('blocks walking into a cliff but not along its foot', () => {
     expect(resolveSlope(cliff, 48.5, 50, 49.6, 50)).toEqual({ x: 48.5, y: 50 });
     const slid = resolveSlope(cliff, 48.5, 50, 49.6, 52);
     expect(slid.x).toBe(48.5); expect(slid.y).toBe(52);
   });
-  it('threshold is 40 degrees', () => { expect(MAX_SLOPE).toBeCloseTo(0.839, 3); });
+  it('threshold is 85 degrees', () => { expect(MAX_SLOPE).toBeCloseTo(Math.tan(85 * Math.PI / 180), 3); });
+
+  it('slows uphill as it gets steeper, not downhill or on the level', () => {
+    expect(speedFactor(flat, 50, 50, 1, 0)).toBe(1);
+    expect(speedFactor(ramp(1), 50, 50, 1, 0)).toBeCloseTo(0.5);   // 45 degrees uphill
+    expect(speedFactor(ramp(1), 50, 50, -1, 0)).toBe(1);           // downhill
+    expect(speedFactor(ramp(1), 50, 50, 0, 1)).toBeCloseTo(1);     // across the slope
+    expect(speedFactor(ramp(0.3), 50, 50, 1, 0)).toBeGreaterThan(0.9);
+    expect(speedFactor(ramp(10), 50, 50, 1, 0)).toBe(0.15);        // floor
+  });
 });
