@@ -61,9 +61,6 @@ async function main() {
   } else {
     // Game view: fixed angled ortho camera locked to the player (#15)
     const game = createGameCamera();
-    // The world ends in darkness: terrain and buildings fade to the background colour toward the box edge.
-    edgeFade(terrain.material, W, H, BG);
-    scene.getObjectByName('buildings').children.forEach((m) => edgeFade(m.material, W, H, BG));
     camera = game.camera;
     player = new THREE.Mesh(new THREE.CapsuleGeometry(0.4, 1.0, 4, 12), new THREE.MeshLambertMaterial({ color: 0xe03030 }));
     const nose = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.5), new THREE.MeshLambertMaterial({ color: 0xffffff }));
@@ -126,7 +123,7 @@ async function main() {
         const vn = (me.vx * px + me.vz * pz) / pl;
         if (vn < 0) { me.vx -= (vn * px) / pl; me.vz -= (vn * pz) / pl; }
       }
-      const inBox = clampToBox(fixed.x, -fixed.y, W, H); // hard stop short of the dark edge
+      const inBox = clampToBox(fixed.x, -fixed.y, W, H); // hard stop at the box edge (walkable right up to 0 m)
       me.x = inBox.x; me.z = inBox.z;
       if (target) { // give up if a wall blocks the way and we make no progress for half a second
         const d = Math.hypot(me.x - target.x, me.z - target.z);
