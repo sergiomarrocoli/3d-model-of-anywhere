@@ -16,7 +16,8 @@ const params = new URLSearchParams(location.search);
 async function main() {
   const areas = await (await fetch('/bundles/index.json')).json();
   if (!areas.length) throw new Error('no bundles found; run build_area.py first');
-  const area = params.get('area') ?? areas[0];
+  const DEFAULT_AREA = 'newtown';
+  const area = params.get('area') ?? (areas.includes(DEFAULT_AREA) ? DEFAULT_AREA : areas[0]);
   $('areas').innerHTML = areas.map((a) => `<a href="?area=${a}"${a === area ? ' class="on"' : ''}>${a}</a>`).join(' ') + ' <a href="?debug&area=' + area + '">debug</a>';
   if (params.has('debug')) { document.body.classList.add('debug'); return (await import('./debug.js')).debugMain(); }
 
