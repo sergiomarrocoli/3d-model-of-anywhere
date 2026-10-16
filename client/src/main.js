@@ -2,6 +2,7 @@
 //   modules/map       loads and draws an area, answers questions about it
 //   modules/walker    the click-to-move game and its camera
 //   modules/presence  friends in the same room see each other
+//   modules/picker    ?pick: choose an area on an open map
 import * as THREE from 'three';
 import { createFlyCamera, debugMain, listMaps, loadMap } from '@map';
 import { startPresence } from '@presence';
@@ -15,7 +16,8 @@ async function main() {
   const areas = await listMaps();
   if (!areas.length) throw new Error('no bundles found; run build_area.py first');
   const area = params.get('area') ?? (areas.includes(DEFAULT_AREA) ? DEFAULT_AREA : areas[0]);
-  $('areas').innerHTML = areas.map((a) => `<a href="?area=${a}"${a === area ? ' class="on"' : ''}>${a}</a>`).join(' ') + ' <a href="?debug&area=' + area + '">debug</a>';
+  $('areas').innerHTML = areas.map((a) => `<a href="?area=${a}"${a === area ? ' class="on"' : ''}>${a}</a>`).join(' ') + ' <a href="?pick">pick area</a> <a href="?debug&area=' + area + '">debug</a>';
+  if (params.has('pick')) { document.body.classList.add('pick'); const { mountPickerPage } = await import('@picker'); return mountPickerPage($('pick')); }
   if (params.has('debug')) { document.body.classList.add('debug'); return debugMain(); }
 
   const canvas = $('scene');
