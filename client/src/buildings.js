@@ -16,16 +16,20 @@ export const ROOF_INSET_M = 1.5;       // within this distance of the footprint 
 export const MIN_ROOF_ABOVE_BASE_M = 2;
 const MAX_REFINE_PASSES = 10;
 
-// Wall texture: instead of one colour per vertical band, each wall is a random patchwork of all the colours found
-// along that wall's footprint edge. The fragment shader splits the wall into WALL_PATCH_M cells and gives each cell a
-// pseudo-random position along the edge, then looks the colour up in the imagery there. Cells are addressed in metres
-// along the wall and up it, so patches are continuous across the pieces a wall is split into.
-export const WALL_PATCH_M = 0.5;
+// Wall texture: each wall is its average colour (8 taps spread along its footprint edge in the imagery) with a subtle
+// grain around it. The grain has two parts, both from smooth noise addressed in metres along and up the wall, so
+// it is continuous across the pieces a wall is split into: (1) a pull toward the colour found at a random place
+// along the edge, so walls with several colours get a hint of each, and (2) a gentle brightness mottle.
+export const WALL_PATCH_M = 0.6;     // size of the larger grain features
+export const WALL_VARIATION = 0.3;   // 0 = flat average colour, 1 = fully the randomly picked colour
+export const WALL_MOTTLE = 0.12;     // +/- brightness variation
 
-/** Patchwork walls: needs the `wallDetail` (along metres, elevation metres) and `wallEdge` (edge start uv, end uv) attributes. */
-export function addWallPatchwork(material, patchM = WALL_PATCH_M) {
+/** Wall shading: needs the `wallDetail` (along metres, elevation metres) and `wallEdge` (edge start uv, end uv) attributes. */
+export function addWallPatchwork(material, { patchM = WALL_PATCH_M, variation = WALL_VARIATION, mottle = WALL_MOTTLE } = {}) {
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uPatchM = { value: patchM };
+    shader.uniforms.uVariation = { value: variation };
+    shader.uniforms.uMottle = { value: mottle };
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nattribute vec2 wallDetail;\nattribute vec4 wallEdge;\nvarying vec2 vWallDetail;\nvarying vec4 vWallEdge;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWallDetail = wallDetail;\nvWallEdge = wallEdge;');
@@ -34,14 +38,27 @@ export function addWallPatchwork(material, patchM = WALL_PATCH_M) {
         varying vec2 vWallDetail;
         varying vec4 vWallEdge;
         uniform float uPatchM;
-        float wallHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }`)
+        uniform float uVariation;
+        uniform float uMottle;
+        float wallHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        float wallNoise(vec2 p) { // smooth value noise, 0..1
+          vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(wallHash(i), wallHash(i + vec2(1.0, 0.0)), f.x), mix(wallHash(i + vec2(0.0, 1.0)), wallHash(i + vec2(1.0, 1.0)), f.x), f.y);
+        }`)
       .replace('#include <map_fragment>', `
-        vec2 wallCell = floor(vWallDetail / uPatchM);
-        float wallT = wallHash(wallCell + vWallEdge.xy * 1000.0);
-        vec4 sampledDiffuseColor = texture2D(map, mix(vWallEdge.xy, vWallEdge.zw, wallT));
+        vec3 wallMean = vec3(0.0);
+        for (int i = 0; i < 8; i++) wallMean += texture2D(map, mix(vWallEdge.xy, vWallEdge.zw, (float(i) + 0.5) / 8.0)).rgb;
+        wallMean /= 8.0;
+        vec2 wallP = vWallDetail / uPatchM + vWallEdge.xy * 1000.0;               // per-wall offset so walls differ
+        float wallT = wallNoise(wallP * 1.0);                                      // where along the edge to borrow a colour from
+        wallT = clamp((wallT - 0.5) * 2.2 + 0.5, 0.0, 1.0);                        // noise clusters near 0.5; stretch it to use the full edge
+        vec3 wallPick = texture2D(map, mix(vWallEdge.xy, vWallEdge.zw, wallT)).rgb;
+        float wallMottleN = wallNoise(wallP * 3.1 + 17.0) * 0.6 + wallNoise(wallP * 7.3 + 5.0) * 0.4;
+        vec3 wallCol = mix(wallMean, wallPick, uVariation) * (1.0 + uMottle * (wallMottleN * 2.0 - 1.0) * 1.6);
+        vec4 sampledDiffuseColor = vec4(wallCol, 1.0);
         diffuseColor *= sampledDiffuseColor;`);
   };
-  material.customProgramCacheKey = () => 'wallpatchwork';
+  material.customProgramCacheKey = () => 'wallpatchwork2';
   material.needsUpdate = true;
 }
 
