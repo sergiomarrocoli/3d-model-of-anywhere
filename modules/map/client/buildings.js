@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { toWorld } from './coords.js';
 import { sampleHeight } from './heightmap.js';
-import { fitRoof } from './roof.js';
+import { fitRoof, inside } from './roof.js';
 
 export const DEFAULT_HEIGHT_M = 6;
 // Walls are coloured by the imagery just inside the footprint edge: sampling exactly on the edge often hits the
@@ -16,6 +16,13 @@ export const WALL_BRIGHTNESS = 0.75;
 export const ROOF_GRID_M = 2;          // roofs that follow the raw DSM are refined until no edge is longer than this
 export const ROOF_INSET_M = 1.5;       // within this distance of the footprint edge the DSM is read on this inset line, so the roof edge is crisp (walls drop vertically from it) and not smeared with the ground or a neighbour
 export const MIN_ROOF_ABOVE_BASE_M = 2;
+// An outline is often a metre or three bigger than the roof (a strip of car park or lawn inside it), so the DSM right at the edge is ground.
+// The roof height at an edge is therefore read further in, along the inward normal at these depths, as a high percentile (the roof, not the rim),
+// and nothing within RIM_DEPTH_M of the edge may dip below it: the wall goes straight up to the eaves instead of the roof sloping down to the ground.
+export const EAVE_DEPTHS_M = [1, 2, 3, 4];
+export const EAVE_SPREAD_M = [-3, -1.5, 0, 1.5, 3];   // ...pooled with the same depths at these offsets along the edge, so neighbouring wall pieces agree and the wall top does not zig-zag
+export const EAVE_PERCENTILE = 0.75;
+export const RIM_DEPTH_M = 4.5;
 const MAX_REFINE_PASSES = 10;
 
 // Wall texture: each wall is its average colour (8 taps spread along its footprint edge in the imagery) with a subtle
@@ -88,6 +95,15 @@ function nearestEdge(rings, x, y) {
     }
   }
   return { qx: best.qx, qy: best.qy, d: Math.sqrt(best.d2), nx: best.nx, ny: best.ny };
+}
+
+/** The roof height at a footprint edge point (a `nearestEdge` result): a high percentile of the DSM a little way inside it, or null if there is no inside. */
+function eaveHeight(rings, surface, e) {
+  const zs = [];
+  for (const t of EAVE_SPREAD_M) for (const d of EAVE_DEPTHS_M) { const x = e.qx - e.ny * t + e.nx * d, y = e.qy + e.nx * t + e.ny * d; if (inside(rings, x, y)) zs.push(sampleHeight(surface, x, y)); }
+  if (!zs.length) return null;
+  zs.sort((a, b) => a - b);
+  return zs[Math.min(zs.length - 1, Math.floor(EAVE_PERCENTILE * (zs.length - 1) + 0.5))];
 }
 
 /** Points along edge p->q, split by repeated halving until every piece is at most maxLen. Includes both ends. */
@@ -176,8 +192,10 @@ export function buildBuildingGeometry(meta, buildings, surface = null) {
     const clampZ = (z) => Math.min(base + 2 * height + 2, Math.max(base + MIN_ROOF_ABOVE_BASE_M, z));
     const roofZ = fit ? (x, y) => clampZ(fit.z(x, y)) : surface
       ? (x, y) => {
-          const e = nearestEdge(rings, x, y);
-          const z = e.d < ROOF_INSET_M ? sampleHeight(surface, e.qx + e.nx * ROOF_INSET_M, e.qy + e.ny * ROOF_INSET_M) : sampleHeight(surface, x, y);
+          const e = nearestEdge(rings, x, y), eave = eaveHeight(rings, surface, e);
+          let z;
+          if (e.d < ROOF_INSET_M) z = eave ?? sampleHeight(surface, e.qx + e.nx * ROOF_INSET_M, e.qy + e.ny * ROOF_INSET_M);
+          else { z = sampleHeight(surface, x, y); if (eave !== null && e.d < RIM_DEPTH_M) z = Math.max(z, eave); }
           return Math.min(base + 2 * height + 2, Math.max(base + MIN_ROOF_ABOVE_BASE_M, z));
         }
       : () => flatTop;

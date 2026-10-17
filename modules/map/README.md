@@ -36,6 +36,9 @@ clearly or the roof is flat. Walls go up vertically to the eaves, and a gable en
 split exactly where they cross the ridge, so its faces are exactly flat and there are few triangles; a hip bends along diagonals and is built on a 1 m grid.
 A building with almost no DSM data under it (a tiny shed), or one no simple roof matches (a tall block with a low annex, an odd roof: the best
 fit is still 3 m (2 m for a flat one) away from the DSM on average, `MAX_ERROR_M`), falls back to the raw DSM roof.
+The raw DSM roof copes with outlines that are bigger than the roof (a 1-3 m rim of car park or lawn inside the outline): the roof height at each edge is
+read further in, as a high percentile of the DSM 1-4 m inside it, pooled along 6 m of the edge so neighbouring wall pieces agree, and nothing within 4.5 m of
+an edge dips below it. So the wall goes straight up to the eaves instead of the roof sloping down to the ground like a tent.
 
 ## Inside
 
