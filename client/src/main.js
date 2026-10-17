@@ -42,7 +42,7 @@ async function playGame({ area, overlay = null, game = 'walker' }) {
     setAspect = (a) => { camera.aspect = a; camera.updateProjectionMatrix(); };
     step = (dt) => fly.update(dt);
   } else if (game === 'racer') { // drive the track drawn in the track step
-    racer = startRacer({ map, scene, canvas, track: overlay, showCheckpoints: params.has('debugcheckpoints') });   // ?debugcheckpoints draws the invisible gates, for debugging
+    racer = startRacer({ map, scene, canvas, track: overlay, showCheckpoints: params.has('debugcheckpoints'), aiCars: Number(params.get('ai')) || 0 });   // ?debugcheckpoints draws the invisible gates, for debugging
     camera = racer.camera; setAspect = racer.setAspect;
     step = (dt) => racer.update(dt);
   } else {
