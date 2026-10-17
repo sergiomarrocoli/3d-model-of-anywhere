@@ -54,6 +54,7 @@ const FACADE_GLSL = `
                     : fMat < 2.5 ? renderCol : vec3(0.5, 0.53, 0.56);
         vec3 albedo = mix(wallCol, pow(matCol, vec3(2.2)) * (0.95 + 0.3 * luma), 0.88);
         albedo = mix(albedo, pow(vTint.rgb, vec3(2.2)), vTint.a * 0.85);
+        albedo *= mix(1.0, clamp(dot(wallMean, vec3(0.3, 0.59, 0.11)) / 0.14, 0.55, 1.35), 0.8);   // the imagery's own light and shadow at the foot of the wall
         if (fMat < 0.5) {                                                           // brick: courses 0.22 m, bricks 0.55 m, each a little different
           float c = fV / 0.22, row = floor(c), bx = fAlong / 0.55 + mod(row, 2.0) * 0.5;
           float mortar = max(1.0 - smoothstep(0.0, 0.12, fract(c)), 1.0 - smoothstep(0.0, 0.05, fract(bx)));
@@ -140,7 +141,7 @@ export function addWallPatchwork(material, { patchM = WALL_PATCH_M, variation = 
         vec4 sampledDiffuseColor = vec4(wallCol, 1.0);
         diffuseColor *= sampledDiffuseColor;`);
   };
-  material.customProgramCacheKey = () => 'wallfacade3';
+  material.customProgramCacheKey = () => 'wallfacade4';
   material.needsUpdate = true;
 }
 

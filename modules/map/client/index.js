@@ -51,8 +51,8 @@ export function createMap(bundle, { renderer = null } = {}) {
   object.add(buildBuildings(meta, buildings, terrain.material.map, surface, renderer)); // roofs share the terrain's imagery texture
   // One directional "sun", no shadows (the imagery already has baked ones). Only walls are lit; roofs and
   // terrain are unlit imagery. A little ambient keeps shaded walls from going black.
-  object.add(new THREE.AmbientLight(0xffffff, 1.4));
-  const sun = new THREE.DirectionalLight(0xfff2dd, 1.8);
+  object.add(new THREE.AmbientLight(0xffffff, 0.9));
+  const sun = new THREE.DirectionalLight(0xfff2dd, 2.3);
   sun.position.set(-200, 300, 150);
   object.add(sun);
 
