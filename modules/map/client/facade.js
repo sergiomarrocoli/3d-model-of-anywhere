@@ -5,7 +5,7 @@ export const MATERIALS = { auto: -1, brick: 0, stone: 1, render: 2, cladding: 3 
 export const WINDOWS = { none: 0, domestic: 1, large: 2, tall: 3 };   // window styles: none, a normal house window, big office/flat windows, tall narrow (church)
 
 export const MIN_WINDOWED_HEIGHT_M = 3.2;   // lower than this (a shed, a garage) and there are no windows
-const FLOOR_M = { domestic: 2.8, large: 3.4, tall: 6, none: 4 };
+const FLOOR_M = { domestic: 2.8, large: 3.4, tall: 7, none: 4 };
 
 const NAMED = {
   red: [0.62, 0.22, 0.18], brown: [0.45, 0.3, 0.2], white: [0.93, 0.92, 0.88], grey: [0.55, 0.55, 0.55], gray: [0.55, 0.55, 0.55], black: [0.15, 0.15, 0.16],
@@ -62,7 +62,7 @@ export function facadeLook(props, height = props?.height) {
   const colour = parseColour(p['building:colour']);
   const shopfront = (p.shop && p.shop !== 'no') || /^(retail|supermarket)$/.test(type) || /^(pub|bar|cafe|restaurant|fast_food|bank|pharmacy|bicycle_rental)$/.test(p.amenity ?? '') ? 1 : 0;
   return {
-    material: materialOf(p['building:material']), windows, floorHeight, shopfront: windows === WINDOWS.none ? 0 : shopfront,
+    material: materialOf(p['building:material']) === MATERIALS.auto && windows === WINDOWS.tall ? MATERIALS.stone : materialOf(p['building:material']), windows, floorHeight, shopfront: windows === WINDOWS.none ? 0 : shopfront,
     seed: hashSeed(p.osm_id ?? JSON.stringify(p)), tint: colour ? [...colour, 1] : [0, 0, 0, 0],
   };
 }

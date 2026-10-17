@@ -48,10 +48,10 @@ const FACADE_GLSL = `
         if (fMat < -0.5) fMat = (wallCol.r > wallCol.g * 1.1 && wallCol.r > wallCol.b * 1.18) ? 0.0 : (luma > 0.5 ? 2.0 : (pick < 0.3 ? 0.0 : (pick < 0.65 ? 2.0 : 1.0)));
         float pal = fract(fSeed * 5.0);
         vec3 renderCol = pal < 0.2 ? vec3(0.9, 0.86, 0.72) : pal < 0.4 ? vec3(0.9, 0.9, 0.88) : pal < 0.6 ? vec3(0.88, 0.8, 0.55) : pal < 0.8 ? vec3(0.86, 0.7, 0.66) : vec3(0.7, 0.76, 0.8);
-        vec3 matCol = fMat < 0.5 ? mix(vec3(0.52, 0.26, 0.2), vec3(0.64, 0.4, 0.3), fract(fSeed * 7.0))
-                    : fMat < 1.5 ? mix(vec3(0.56, 0.52, 0.42), vec3(0.7, 0.64, 0.52), fract(fSeed * 5.0))
+        vec3 matCol = fMat < 0.5 ? mix(vec3(0.64, 0.3, 0.22), vec3(0.74, 0.42, 0.3), fract(fSeed * 7.0))
+                    : fMat < 1.5 ? mix(vec3(0.68, 0.59, 0.42), vec3(0.78, 0.69, 0.5), fract(fSeed * 5.0))
                     : fMat < 2.5 ? renderCol : vec3(0.5, 0.53, 0.56);
-        vec3 albedo = mix(wallCol, pow(matCol, vec3(2.2)) * (0.85 + 0.5 * luma), 0.7);
+        vec3 albedo = mix(wallCol, pow(matCol, vec3(2.2)) * (0.95 + 0.3 * luma), 0.88);
         albedo = mix(albedo, pow(vTint.rgb, vec3(2.2)), vTint.a * 0.85);
         if (fMat < 0.5) {                                                           // brick: courses 0.22 m, bricks 0.55 m, each a little different
           float c = fV / 0.22, row = floor(c), bx = fAlong / 0.55 + mod(row, 2.0) * 0.5;
@@ -68,12 +68,13 @@ const FACADE_GLSL = `
         albedo = mix(albedo, vec3(0.62), 0.3 * (1.0 - smoothstep(0.0, 0.22, fTop - fV)) * step(0.0, fTop - fV));   // coping along the top
         if (fWin > 0.5 && fL > 2.4) {
           float margin = fWin > 2.5 ? 1.8 : 1.0, usable = fL - 2.0 * margin;
-          float bayT = (fWin < 1.5 ? 3.1 : fWin < 2.5 ? 3.0 : 5.0) * (0.9 + 0.25 * fract(fSeed * 11.0));
+          float bayT = (fWin < 1.5 ? 3.1 : fWin < 2.5 ? 3.2 : 4.2) * (0.9 + 0.25 * fract(fSeed * 11.0));
           float u = fAlong - margin;
           if (usable > 1.2 && u > 0.0 && u < usable) {
             float n = max(1.0, floor(usable / bayT + 0.5)), bw = usable / n, bi = floor(u / bw), lx = u - (bi + 0.5) * bw;
             float k = floor(fV / fFloor), ly = fV - k * fFloor, fits = step((k + 1.0) * fFloor, fTop - 0.3);
-            float ww = fWin < 1.5 ? 1.1 : fWin < 2.5 ? min(bw * 0.62, 2.1) : 0.8, wh = fWin < 1.5 ? 1.4 : fWin < 2.5 ? 1.6 : 3.0, sill = fWin < 2.5 ? 0.32 * fFloor : 1.4;
+            float ww = fWin < 1.5 ? 1.2 : fWin < 2.5 ? min(bw * 0.72, 2.6) : 1.1, wh = fWin < 1.5 ? 1.5 : fWin < 2.5 ? 1.9 : 4.2, sill = fWin < 2.5 ? 0.3 * fFloor : 1.8;
+            if (fWin > 2.5) ww *= 1.0 - max(0.0, ((ly - sill) / wh - 0.7) / 0.3);   // pointed arch head
             float isDoor = 0.0, isShop = 0.0;
             if (k < 0.5) {
               if (fShop > 0.5 && fWin < 3.5) { isShop = 1.0; ww = bw * 0.86; wh = min(2.5, fFloor - 0.6); sill = 0.4; }
@@ -84,10 +85,10 @@ const FACADE_GLSL = `
             float inY = smoothstep(sill - a, sill + a, ly) * (1.0 - smoothstep(sill + wh - a, sill + wh + a, ly));
             float inside = inX * inY * fits * coarse;
             float edge = min(min(lx + ww * 0.5, ww * 0.5 - lx), min(ly - sill, sill + wh - ly));         // metres in from the edge of the opening
-            vec3 frameCol = fract(fSeed * 13.0) < 0.6 ? vec3(0.8, 0.8, 0.76) : vec3(0.1, 0.08, 0.07);
-            vec3 glass = mix(vec3(0.03, 0.05, 0.08), vec3(0.16, 0.22, 0.3), smoothstep(0.0, 1.0, (ly - sill) / wh));
+            vec3 frameCol = fWin > 1.5 ? vec3(0.08, 0.085, 0.09) : fract(fSeed * 13.0) < 0.6 ? vec3(0.8, 0.8, 0.76) : vec3(0.1, 0.08, 0.07);
+            vec3 glass = mix(vec3(0.1, 0.13, 0.17), vec3(0.34, 0.42, 0.5), smoothstep(0.0, 1.0, (ly - sill) / wh));
             vec3 doorCol = fract(fSeed * 29.0) < 0.25 ? vec3(0.05, 0.14, 0.3) : fract(fSeed * 29.0) < 0.5 ? vec3(0.4, 0.07, 0.06) : fract(fSeed * 29.0) < 0.75 ? vec3(0.04, 0.2, 0.1) : vec3(0.06, 0.05, 0.05);
-            vec3 opening = isDoor > 0.5 ? doorCol : mix(glass, frameCol, 1.0 - smoothstep(0.04, 0.09, edge));
+            vec3 opening = isDoor > 0.5 ? doorCol : mix(glass, frameCol, 1.0 - smoothstep(fWin > 1.5 ? 0.07 : 0.04, fWin > 1.5 ? 0.14 : 0.09, edge));
             if (isDoor < 0.5 && isShop < 0.5 && fWin < 2.5) opening = mix(opening, frameCol, 0.9 * (1.0 - smoothstep(0.0, 0.05, abs(lx))) * fine + 0.8 * (1.0 - smoothstep(0.0, 0.05, abs(ly - sill - wh * 0.6))) * fine * inX);   // sash bars
             albedo = mix(albedo, opening, inside);
             float onSill = smoothstep(sill - 0.1 - a, sill - 0.1 + a, ly) * (1.0 - smoothstep(sill - a, sill + a, ly)) * inX * step(0.5, 1.0 - isDoor) * fits * coarse;
@@ -138,7 +139,7 @@ export function addWallPatchwork(material, { patchM = WALL_PATCH_M, variation = 
         vec4 sampledDiffuseColor = vec4(wallCol, 1.0);
         diffuseColor *= sampledDiffuseColor;`);
   };
-  material.customProgramCacheKey = () => 'wallfacade1';
+  material.customProgramCacheKey = () => 'wallfacade2';
   material.needsUpdate = true;
 }
 
