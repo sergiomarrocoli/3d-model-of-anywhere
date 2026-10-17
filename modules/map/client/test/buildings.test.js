@@ -166,6 +166,33 @@ describe('pitched roofs from a surface map', () => {
 });
 
 
+describe('a footprint bigger than its roof (a rim of ground inside the outline)', () => {
+  // 100x100 m, 1 m cells. A building outlined x 10..50, y 20..40, but its real roof only covers x 12.5..50, y 22.5..40: a 2-3 m rim of ground
+  // (12 m) on the west and south sides. The roof is an odd two-level shape no simple roof fits (so the raw DSM path is used): 30 m on the
+  // left half, 20 m on the right.
+  const n = 100, data = new Float32Array(n * n);
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) {
+    const x = c + 0.5, y = n - r - 0.5;
+    data[r * n + c] = x >= 12.5 && y >= 22.5 && x <= 50 && y <= 40 ? (x < 30 ? 30 : 20) : 12;
+  }
+  const surface = { width: n, height: n, resolution: 1, data };
+  const b = buildBuildingGeometry(meta, fc(poly([sq(10, 20, 50, 40)], { base_z: 12, height: 20 })), surface);
+  const ys = (g) => [...g.getAttribute('position').array].filter((_, i) => i % 3 === 1);
+  it('does not slope the roof down to the ground at the rim: wall tops on the rim sides are up at roof height', () => {
+    const wp = b.walls.getAttribute('position'), tops = [];
+    for (let q = 0; q < wp.count; q += 4) { const x = (wp.getX(q + 2) + wp.getX(q + 3)) / 2, z = -(wp.getZ(q + 2) + wp.getZ(q + 3)) / 2; tops.push({ x, y: z, top: (wp.getY(q + 2) + wp.getY(q + 3)) / 2 }); }
+    // (a corner is ambiguous, so the 3 m by each corner are left out)
+    const west = tops.filter((t) => Math.abs(t.x - 10) < 0.01 && t.y > 23 && t.y < 37), south = tops.filter((t) => Math.abs(t.y - 20) < 0.01 && t.x > 13 && t.x < 47);
+    expect(west.length).toBeGreaterThan(0); expect(south.length).toBeGreaterThan(0);
+    for (const t of [...west, ...south]) expect(t.top).toBeGreaterThan(20 - 10 - 0.5);                         // roof is 20-30 m, zRef 10: never down near the ground (2)
+  });
+  it('the roof near the rim stays at or above the eave height: nothing dips to the ground inside the outline', () => {
+    const p = b.roofs.getAttribute('position'); let low = 0, n = 0;
+    for (let i = 0; i < p.count; i++) { const x = p.getX(i), y = -p.getZ(i); if (x > 13 && y > 23 && x < 47 && y < 37) { n++; if (p.getY(i) < 20 - 10 - 0.5) low++; } }
+    expect(n).toBeGreaterThan(50); expect(low).toBe(0);
+  });
+});
+
 describe('wall patchwork texture', () => {
   const g = buildBuildingGeometry(meta, fc(poly([sq(10, 20, 30, 40)])));
   it('gives walls metres-along and elevation attributes, continuous along a wall', () => {
