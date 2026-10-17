@@ -42,7 +42,7 @@ async function playGame({ area, overlay = null, game = 'walker' }) {
     setAspect = (a) => { camera.aspect = a; camera.updateProjectionMatrix(); };
     step = (dt) => fly.update(dt);
   } else if (game === 'racer') { // drive the track drawn in the track step
-    racer = startRacer({ map, scene, canvas, track: overlay });
+    racer = startRacer({ map, scene, canvas, track: overlay, showCheckpoints: params.has('checkpoints') });   // ?checkpoints draws the invisible checkpoints
     camera = racer.camera; setAspect = racer.setAspect;
     step = (dt) => racer.update(dt);
   } else {
