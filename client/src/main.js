@@ -5,23 +5,25 @@
 //   modules/credits   a Credits button and overlay listing the sources the area used (used by play)
 //   modules/track    track  draw a closed track on an overhead view, around buildings   -> ctx.overlay (a game draws or uses it)
 //   play              load the map (modules/map), run the walker game (modules/walker), friends (modules/presence)
-//   race              load the map and drive the track from ctx.overlay (modules/racer)
+//   race              load the map and drive the track from ctx.overlay (modules/racer); with ?room=NAME it is an online race: whoever drew the track
+//                     hosts, friends open ?flow=race&area=<id>&room=NAME and get the host's track (client/src/netrace.js)
 // URLs: /  plays the default area;  ?area=<id>  plays that one;  ?pick  is ?flow=pick,build,play;  ?flow=a,b,c  runs steps a, b, c,
 //       e.g. ?flow=pick,build,track,play  or, on an area already built,  ?flow=track,race&area=newtown  (draw a track, then drive it)
 import * as THREE from 'three';
 import { buildStep } from '@builder';
 import { mountCredits } from '@credits';
 import { createFlyCamera, debugMain, listMaps, loadMap } from '@map';
-import { startPresence } from '@presence';
+import { pickName, startPresence } from '@presence';
 import { startRacer } from '@racer';
 import { buildTrackRibbon, trackStep } from '@track';
 import { startWalker } from '@walker';
 import { FlowError, parseFlow, runFlow, urlAfterBuild } from './flow.js';
+import { attachRace, joinRoom, sendTrack, waitForTrack } from './netrace.js';
 
 const $ = (id) => document.getElementById(id);
 const DEFAULT_AREA = 'newtown';
 
-async function playGame({ area, overlay = null, game = 'walker' }) {
+async function playGame({ area, overlay = null, game = 'walker', room = null }) {
   const params = new URLSearchParams(location.search);
   const canvas = $('scene');
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -42,9 +44,11 @@ async function playGame({ area, overlay = null, game = 'walker' }) {
     setAspect = (a) => { camera.aspect = a; camera.updateProjectionMatrix(); };
     step = (dt) => fly.update(dt);
   } else if (game === 'racer') { // drive the track drawn in the track step
-    racer = startRacer({ map, scene, canvas, track: overlay, showCheckpoints: params.has('debugcheckpoints'), aiCars: Number(params.get('ai')) || 0 });   // ?debugcheckpoints draws the invisible gates, for debugging
+    racer = startRacer({ map, scene, canvas, track: overlay, showCheckpoints: params.has('debugcheckpoints'), aiCars: Number(params.get('ai')) || 0, online: !!room, selfId: room?.state.id });   // ?debugcheckpoints draws the invisible gates, for debugging
     camera = racer.camera; setAspect = racer.setAspect;
-    step = (dt) => racer.update(dt);
+    const net = room ? attachRace(room, racer) : null;
+    if (net) showInvite($('players'), params.get('room'), area);
+    step = (dt) => { racer.update(dt); net?.tick(dt); };
   } else {
     walker = startWalker({ map, scene, canvas });
     presence = startPresence({ scene, localMesh: walker.player, groundY: map.groundY, overlay: $('players'), area, params });
@@ -60,6 +64,15 @@ async function playGame({ area, overlay = null, game = 'walker' }) {
   document.title = `civil-war: ${map.meta.id}`;
 }
 
+/** A box with the room's name and a button that copies the link friends open to join this race. */
+function showInvite(el, room, area) {
+  const link = () => { const u = new URL(location.href); u.search = ''; u.searchParams.set('flow', 'race'); u.searchParams.set('area', area); u.searchParams.set('room', room); return u.href; };
+  el.innerHTML = `online race, room <b>${room}</b><br><button data-copy>copy invite link</button>`;
+  el.style.cssText = 'top:auto;bottom:28px';
+  el.hidden = false;
+  el.querySelector('[data-copy]').onclick = () => navigator.clipboard?.writeText(link());
+}
+
 async function main() {
   const params = new URLSearchParams(location.search);
   const areas = await listMaps();
@@ -73,16 +86,34 @@ async function main() {
     const id = ctx.area ?? area;
     if (ctx.bundleUrl) history.replaceState(null, '', urlAfterBuild(location.href, id));   // an area was just built: a refresh plays it
     $('flow').hidden = true; document.body.classList.remove('flow');
-    await playGame({ area: id, overlay: ctx.overlay ?? null, game });
+    await playGame({ area: id, overlay: ctx.overlay ?? null, game, room: ctx.room ?? null });
     return { ...ctx, area: id };
   };
   const registry = {
     pick: { name: 'pick', run: (ctx, host) => import('@picker').then((m) => m.pickStep.run(ctx, host)) },   // loaded only when used: MapLibre is large
     build: buildStep,
     track: trackStep,
-    race: { name: 'race', async run(ctx) {
-      if (ctx.overlay?.type !== 'track') throw new FlowError('there is no track to race on: use ?flow=track,race (draw one first)');
-      return finishFlow(ctx, 'racer');
+    race: { name: 'race', async run(ctx, host) {
+      const roomName = params.get('room');
+      if (!roomName) {
+        if (ctx.overlay?.type !== 'track') throw new FlowError('there is no track to race on: use ?flow=track,race (draw one first)');
+        return finishFlow(ctx, 'racer');
+      }
+      // online: connect first. Whoever brings a track hosts the room; anyone else waits for the host's track.
+      const room = await joinRoom({ room: roomName, name: pickName(params) });
+      if (!room) {
+        if (ctx.overlay?.type !== 'track') throw new FlowError('there is no game server to join the room on: run `npm run share` (or start modules/presence/server)');
+        return finishFlow(ctx, 'racer');                                       // no server: race alone
+      }
+      let overlay = ctx.overlay;
+      if (overlay?.type === 'track') sendTrack(room, overlay);
+      else {
+        host.root.className = 'track-page'; host.root.innerHTML = `<div class="track-loading">Waiting for the host of room ${roomName} to draw a track…</div>`;
+        const t = await waitForTrack(room, host.signal);
+        overlay = { type: 'track', closed: true, points: t.points, lengthM: t.lengthM, area: ctx.area ?? null, width: t.width };
+        host.root.innerHTML = ''; host.root.className = '';
+      }
+      return finishFlow({ ...ctx, overlay, room }, 'racer');
     } },
     play: { name: 'play', run: (ctx) => finishFlow(ctx, 'walker') },
   };
