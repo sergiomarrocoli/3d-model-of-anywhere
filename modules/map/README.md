@@ -34,7 +34,8 @@ ridge along the longer side) or **hip** (slopes on all sides, the height rising 
 ridge height come from a regression on the roof's shape that ignores outliers; the pitch is capped at about 50 degrees; a pitched roof has to beat flat
 clearly or the roof is flat. Walls go up vertically to the eaves, and a gable end is walled up to the ridge in a triangle. A gable's roof and walls are
 split exactly where they cross the ridge, so its faces are exactly flat and there are few triangles; a hip bends along diagonals and is built on a 1 m grid.
-A building with almost no DSM data under it (a tiny shed) falls back to the raw DSM.
+A building with almost no DSM data under it (a tiny shed), or one no simple roof matches (a tall block with a low annex, an odd roof: the best
+fit is still 3 m (2 m for a flat one) away from the DSM on average, `MAX_ERROR_M`), falls back to the raw DSM roof.
 
 ## Inside
 

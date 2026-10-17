@@ -45,13 +45,18 @@ describe('fitRoof', () => {
     expect(r.kind).toBe('gable'); expect(r.peak).toBeLessThan(28);
   });
   it('caps the pitch, so a deep narrow pit of noise cannot make a needle', () => {
-    const r = fit(rect(0, 0, 20, 4), (x, y) => 10 + 30 * (1 - Math.abs(y - 2) / 2)); expect(r.peak - r.eave).toBeLessThanOrEqual(1.2 * 4 + 1e-9);                       // never steeper than about 50 degrees across the 4 m width
+    const r = fit(rect(0, 0, 20, 4), (x, y) => 10 + 30 * (1 - Math.abs(y - 2) / 2));
+    expect(r === null || r.peak - r.eave <= 1.2 * 4 + 1e-9).toBe(true);                                // never steeper than about 50 degrees across the 4 m width (or no roof at all: it is no match)
   });
   it('works on a building turned to any angle, and on one with a courtyard', () => {
     const t = 0.6, rot = ([x, y]) => [x * Math.cos(t) - y * Math.sin(t), x * Math.sin(t) + y * Math.cos(t)], ring = house.map(rot);
     const r = fit(ring, (x, y) => { const lx = x * Math.cos(t) + y * Math.sin(t), ly = -x * Math.sin(t) + y * Math.cos(t); return 20 + 6 * (1 - Math.abs(ly - 30) / 10) + 0 * lx; });
     expect(r.kind).toBe('gable'); expect(r.peak).toBeCloseTo(26, 0);
     const rings = [rect(0, 0, 30, 30), rect(10, 10, 20, 20).reverse()], c = fitRoof(rings, () => 15, dist(rings)); expect(c.kind).toBe('flat');
+  });
+  it('says nothing for a building no simple roof matches: a tall block with a low annex keeps the raw DSM', () => {
+    expect(fit(house, (x, y) => (x < 30 ? 28 : 18) + noise(x, y) * 0.5)).toBeNull();           // two flat levels 10 m apart
+    expect(fit(house, (x, y) => 20 + 12 * Math.abs(Math.sin(x / 3) * Math.cos(y / 2)))).toBeNull();   // a jumble
   });
   it('says nothing when there is almost no data (a tiny shed)', () => { expect(fit(rect(0, 0, 2, 2), () => 5)).toBeNull(); });
 });

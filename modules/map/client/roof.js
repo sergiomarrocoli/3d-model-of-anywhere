@@ -6,6 +6,9 @@
 
 export const MIN_RISE_M = 1.2;         // less than this between eaves and peak and the roof is flat
 export const MAX_PITCH_TAN = 1.2;      // the steepest roof: rise over run (about 50 degrees)
+export const MAX_ERROR_M = 3;          // if the best pitched roof is still this far from the DSM on average, say nothing: the caller keeps the raw DSM
+export const MAX_FLAT_ERROR_M = 2;     // a flat roof has to fit more tightly: on a building with real height variation (two levels, an odd roof) "flat" is just wrong
+export const MAX_SHED_ERROR_M = 1;      // a single slope has to be a tight fit: a plane through a step between two levels is not a roof
 export const MIN_SAMPLES = 6;
 const MAX_SAMPLES = 300;
 const SAMPLE_INSET_M = 0.5;            // samples this close to the footprint edge are skipped: they mix in the ground and neighbours
@@ -51,7 +54,7 @@ function fitPlane(pts, x0, y0) {
  * @param rings    normalised footprint rings (outer first), local metres
  * @param height   (x, y) -> DSM elevation
  * @param distance (x, y) -> distance from (x, y) to the nearest footprint edge
- * @returns null when there is too little data to say anything; else
+ * @returns null when there is too little data to say anything, or no simple roof matches it (MAX_ERROR_M); else
  *   { kind: 'flat'|'shed'|'gable'|'hip', z(x, y), creases: [side(x, y)], maxLen, eave, peak, error }
  *   `creases` are signed-distance functions of the straight lines the roof bends along (a gable's ridge): geometry should have a
  *   vertex wherever an edge crosses one, and then the faces are exactly flat. `maxLen` is how fine the faces must be (Infinity
@@ -101,13 +104,14 @@ export function fitRoof(rings, height, distance) {
   if (gp.rise >= MIN_RISE_M) { const z = (x, y) => gp.eave + gp.rise * gGable(x, y); options.push({ kind: 'gable', z, creases: [(x, y) => cross(x, y) - wm], maxLen: Infinity, eave: gp.eave, peak: gp.eave + gp.rise, error: mae(z) }); }
   const hp = profile(gHip);
   if (hp.rise >= MIN_RISE_M) { const z = (x, y) => hp.eave + hp.rise * gHip(x, y); options.push({ kind: 'hip', z, creases: [], maxLen: 1, eave: hp.eave, peak: hp.eave + hp.rise, error: mae(z) }); }
-  if (!options.length && percentile(zs, 0.9) - percentile(zs, 0.1) < MIN_RISE_M) return { ...flat, error: flatErr };
+  const ok = (r) => (r.error <= (r.kind === 'flat' ? MAX_FLAT_ERROR_M : MAX_ERROR_M) ? r : null);
+  if (!options.length && percentile(zs, 0.9) - percentile(zs, 0.1) < MIN_RISE_M) return ok({ ...flat, error: flatErr });
   const plane = fitPlane(pts, x0, y0), lo = percentile(zs, 0.05), hi = Math.min(percentile(zs, 0.95), lo + MAX_PITCH_TAN * 2 * hw);   // a shed's run is the whole width
   if (plane) {                                                       // one slope: kept only if it clearly beats the ridge shapes
     const z = (x, y) => Math.max(lo, Math.min(hi, plane[0] + plane[1] * (x - x0) + plane[2] * (y - y0))), error = mae(z);
-    if (hi - lo >= MIN_RISE_M && error < 0.6 * Math.min(flatErr, ...options.map((o) => o.error))) options.push({ kind: 'shed', z, creases: [], maxLen: Infinity, eave: lo, peak: hi, error });
+    if (hi - lo >= MIN_RISE_M && error <= MAX_SHED_ERROR_M && error < 0.6 * Math.min(flatErr, ...options.map((o) => o.error))) options.push({ kind: 'shed', z, creases: [], maxLen: Infinity, eave: lo, peak: hi, error });
   }
-  if (!options.length) return { ...flat, error: flatErr };
+  if (!options.length) return ok({ ...flat, error: flatErr });
   const best = options.reduce((a, b) => (b.error < a.error ? b : a));
-  return best.error + 0.15 < flatErr ? best : { ...flat, error: flatErr };      // a pitched roof has to be clearly better than flat
+  return ok(best.error + 0.15 < flatErr ? best : { ...flat, error: flatErr });      // a pitched roof has to be clearly better than flat
 }
