@@ -26,9 +26,19 @@ scene.add(map.object);                                              // terrain, 
 
 Coordinates are world coordinates: X east, Y up (from the lowest ground in the area), Z = -north.
 
+## Roofs
+
+The LiDAR surface (DSM) is noisy: tree overhang, chimneys, dormers and a 1-2 m cell, so draping it on a building makes smoothed lumps. Instead
+`roof.js` fits each building the simple roof that best matches its DSM: **flat** (at the median height), **shed** (one slope), **gable** (a straight
+ridge along the longer side) or **hip** (slopes on all sides, the height rising with distance from the walls). The eave height, the pitch and the
+ridge height come from a regression on the roof's shape that ignores outliers; the pitch is capped at about 50 degrees; a pitched roof has to beat flat
+clearly or the roof is flat. Walls go up vertically to the eaves, and a gable end is walled up to the ridge in a triangle. A gable's roof and walls are
+split exactly where they cross the ridge, so its faces are exactly flat and there are few triangles; a hip bends along diagonals and is built on a 1 m grid.
+A building with almost no DSM data under it (a tiny shed) falls back to the raw DSM.
+
 ## Inside
 
-`bundle.js` loader · `terrain.js` heightmap mesh · `buildings.js` extruded footprints, roofs from the DSM, wall texture ·
+`bundle.js` loader · `terrain.js` heightmap mesh · `buildings.js` extruded footprints, roofs, wall texture · `roof.js` fits a clean roof to the DSM ·
 `collision.js` circle-vs-polygon with a spatial grid · `slope.js` · `edge.js` · `raycast.js` · `heightmap.js` sampling ·
 `flycam.js` and `debug.js` (the `?fly` camera and the `?debug` inspector, for looking at a map without a game).
 
