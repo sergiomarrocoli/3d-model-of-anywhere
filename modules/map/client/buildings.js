@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { toWorld } from './coords.js';
 import { sampleHeight } from './heightmap.js';
+import { fitRoof } from './roof.js';
 
 export const DEFAULT_HEIGHT_M = 6;
 // Walls are coloured by the imagery just inside the footprint edge: sampling exactly on the edge often hits the
@@ -10,8 +11,9 @@ export const WALL_SAMPLE_INSET_M = 0.75;
 // read as shaded verticals next to the roofs. Set as an sRGB grey, so it scales the displayed pixel values.
 export const WALL_BRIGHTNESS = 0.75;
 
-// Pitched roofs (when the bundle has a surfacemap): roof/wall-top heights come from the LiDAR DSM.
-export const ROOF_GRID_M = 2;          // roofs are refined until no edge is longer than this
+// Pitched roofs (when the bundle has a surfacemap): each building gets the simple roof (flat, shed, gable or hip, see roof.js) that best
+// matches the LiDAR DSM, with vertical walls up to the eaves and gable ends. Where there is too little data the roof follows the raw DSM.
+export const ROOF_GRID_M = 2;          // roofs that follow the raw DSM are refined until no edge is longer than this
 export const ROOF_INSET_M = 1.5;       // within this distance of the footprint edge the DSM is read on this inset line, so the roof edge is crisp (walls drop vertically from it) and not smeared with the ground or a neighbour
 export const MIN_ROOF_ABOVE_BASE_M = 2;
 const MAX_REFINE_PASSES = 10;
@@ -95,11 +97,22 @@ function splitEdge(p, q, maxLen, depth = 0) {
   return [...splitEdge(p, m, maxLen, depth + 1).slice(0, -1), ...splitEdge(m, q, maxLen, depth + 1)];
 }
 
+const CREASE_EPS = 1e-6;
+/** Points along p->q split at every crease it crosses (a crease is a signed-distance function; a crossing is a sign change), then by halving to maxLen. */
+function splitEdgeAtCreases(p, q, maxLen, creases) {
+  const cuts = [];
+  for (const c of creases) { const a = c(p[0], p[1]), b = c(q[0], q[1]); if (a * b < 0 && Math.abs(a) > CREASE_EPS && Math.abs(b) > CREASE_EPS) cuts.push(a / (a - b)); }
+  cuts.sort((s, t) => s - t);
+  const pts = [p, ...cuts.map((t) => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]), q];
+  return pts.flatMap((a, i) => (i + 1 < pts.length ? splitEdge(a, pts[i + 1], maxLen).slice(i ? 1 : 0) : []));
+}
+
 /**
  * Conforming refinement: split every edge longer than maxLen at its midpoint (midpoints are shared between the
- * triangles on either side, so there are no cracks) and repeat. Winding is preserved.
+ * triangles on either side, so there are no cracks) and repeat. An edge that crosses a crease (see fitRoof) is split exactly where it
+ * crosses, whatever its length, so the roof bends along a line of edges. Winding is preserved.
  */
-function refineTriangles(verts, tris, maxLen) {
+function refineTriangles(verts, tris, maxLen, creases = []) {
   for (let pass = 0; pass < MAX_REFINE_PASSES; pass++) {
     const mids = new Map();
     let any = false;
@@ -108,7 +121,10 @@ function refineTriangles(verts, tris, maxLen) {
       let m = mids.get(key);
       if (m === undefined) {
         const [ax, ay] = verts[i], [bx, by] = verts[j];
-        if (Math.hypot(bx - ax, by - ay) > maxLen) { m = verts.push([(ax + bx) / 2, (ay + by) / 2]) - 1; any = true; } else m = -1;
+        let t = -1;
+        for (const c of creases) { const ca = c(ax, ay), cb = c(bx, by); if (ca * cb < 0 && Math.abs(ca) > CREASE_EPS && Math.abs(cb) > CREASE_EPS) { t = ca / (ca - cb); break; } }
+        if (t < 0 && Math.hypot(bx - ax, by - ay) > maxLen) t = 0.5;
+        if (t >= 0) { m = verts.push([ax + (bx - ax) * t, ay + (by - ay) * t]) - 1; any = true; } else m = -1;
         mids.set(key, m);
       }
       return m;
@@ -156,14 +172,16 @@ export function buildBuildingGeometry(meta, buildings, surface = null) {
     const flatTop = base + height;
     // Absolute roof elevation at a footprint point: the DSM, kept between a floor and a cap so tree canopy and
     // gaps cannot make a roof spike or sink through the ground.
-    const roofZ = surface
+    const fit = surface ? fitRoof(rings, (x, y) => sampleHeight(surface, x, y), (x, y) => nearestEdge(rings, x, y).d) : null;
+    const clampZ = (z) => Math.min(base + 2 * height + 2, Math.max(base + MIN_ROOF_ABOVE_BASE_M, z));
+    const roofZ = fit ? (x, y) => clampZ(fit.z(x, y)) : surface
       ? (x, y) => {
           const e = nearestEdge(rings, x, y);
           const z = e.d < ROOF_INSET_M ? sampleHeight(surface, e.qx + e.nx * ROOF_INSET_M, e.qy + e.ny * ROOF_INSET_M) : sampleHeight(surface, x, y);
           return Math.min(base + 2 * height + 2, Math.max(base + MIN_ROOF_ABOVE_BASE_M, z));
         }
       : () => flatTop;
-    const maxLen = surface ? ROOF_GRID_M : Infinity;
+    const maxLen = fit ? fit.maxLen : surface ? ROOF_GRID_M : Infinity, creases = fit?.creases ?? [];
 
     // Walls: one quad per edge piece. With the outer ring CCW (and holes CW) the outward normal is (dy, -dx) in local x/y.
     for (const ring of rings) {
@@ -175,7 +193,7 @@ export function buildBuildingGeometry(meta, buildings, surface = null) {
         const nx = nx2, nz = -ny2; // world normal (world Z = -y)
         // Sample point per end: moved WALL_SAMPLE_INSET_M into the building (against the outward normal).
         const sx = -nx2 * WALL_SAMPLE_INSET_M, sy = -ny2 * WALL_SAMPLE_INSET_M;
-        const pts = splitEdge(p0, p1, maxLen);
+        const pts = splitEdgeAtCreases(p0, p1, maxLen, creases);
         for (let j = 0; j + 1 < pts.length; j++) {
           const [x0, y0] = pts[j], [x1, y1] = pts[j + 1];
           const k = wp.length / 3;
@@ -199,7 +217,7 @@ export function buildBuildingGeometry(meta, buildings, surface = null) {
     const flat = rings.flatMap((r) => r);
     const base2d = THREE.ShapeUtils.triangulateShape(rings[0].map(([x, y]) => new THREE.Vector2(x, y)), rings.slice(1).map((r) => r.map(([x, y]) => new THREE.Vector2(x, y))));
     const verts = flat.map(([x, y]) => [x, y]);
-    const tris = surface ? refineTriangles(verts, base2d, maxLen) : base2d;
+    const tris = surface ? refineTriangles(verts, base2d, maxLen, creases) : base2d;
     const k0 = rp.length / 3;
     for (const [x, y] of verts) {
       rp.push(...toWorld(meta, x, y, roofZ(x, y)));

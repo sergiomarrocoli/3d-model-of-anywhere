@@ -129,14 +129,15 @@ describe('pitched roofs from a surface map', () => {
     expect(eave).toBeLessThan(ridge - 3);
     expect(Math.min(...ys(roofs))).toBeGreaterThanOrEqual(2 - 1e-6 + 0); // base 12 + 2 - zRef 10
   });
-  it('is refined to small triangles that still cover the footprint and face up', () => {
+  it('is a clean gable: a few big flat faces with a straight ridge along the full length, covering the footprint and facing up', () => {
     const t = tris(roofs);
-    expect(t.length).toBeGreaterThan(100);
+    expect(t.length).toBeLessThan(20);
+    const ridgeXs = t.flat().filter(([, , z]) => Math.abs(-z - 30) < 1e-6).map(([x]) => +x.toFixed(3));
+    expect(Math.min(...ridgeXs)).toBeCloseTo(10); expect(Math.max(...ridgeXs)).toBeCloseTo(50);      // the ridge runs the full 40 m, end to end
     expect(t.reduce((s, tr) => s + area(tr), 0)).toBeGreaterThan(40 * 20 - 1e-6);   // pitched, so slightly more than the plan area
     const plan = (tr) => { const [a, b, c] = tr; return Math.abs((b[0] - a[0]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[0] - a[0])) / 2; };
     expect(t.reduce((s, tr) => s + plan(tr), 0)).toBeCloseTo(800, 3);
     for (const tr of t) expect(faceNormal(tr)[1]).toBeGreaterThan(0);
-    for (const tr of t) for (let i = 0; i < 3; i++) { const a = tr[i], b = tr[(i + 1) % 3]; expect(Math.hypot(a[0] - b[0], a[2] - b[2])).toBeLessThanOrEqual(2 + 1e-9); }
   });
   it('has no cracks: every wall top point is a roof vertex at the same height', () => {
     const rp = roofs.getAttribute('position'), wp = walls.getAttribute('position');
@@ -144,7 +145,14 @@ describe('pitched roofs from a surface map', () => {
     const roofPts = new Set(); for (let i = 0; i < rp.count; i++) roofPts.add(key(rp.getX(i), rp.getY(i), rp.getZ(i)));
     let tops = 0;
     for (let q = 0; q < wp.count; q += 4) for (const c of [2, 3]) { tops++; expect(roofPts.has(key(wp.getX(q + c), wp.getY(q + c), wp.getZ(q + c)))).toBe(true); }
-    expect(tops).toBeGreaterThan(40);
+    expect(tops).toBeGreaterThanOrEqual(12);                                       // the two gable ends are each split at the ridge
+  });
+  it('the gable ends are walled up to the ridge in a triangle, the long walls stop level at the eaves', () => {
+    const wp = walls.getAttribute('position'), top = [];
+    for (let q = 0; q < wp.count; q += 4) top.push({ y: [wp.getY(q + 2), wp.getY(q + 3)], z: [wp.getZ(q + 2), wp.getZ(q + 3)], x: [wp.getX(q + 2), wp.getX(q + 3)] });
+    const apex = top.filter((w) => Math.abs(Math.max(...w.y) - 16) < 0.01); expect(apex.length).toBeGreaterThan(0);        // some wall piece reaches the ridge height (26 - 10)
+    const eaves = top.filter((w) => Math.abs(w.z[0] + 20) < 0.01 && Math.abs(w.z[1] + 20) < 0.01 || Math.abs(w.z[0] + 40) < 0.01 && Math.abs(w.z[1] + 40) < 0.01);
+    expect(eaves.length).toBe(2); for (const w of eaves) expect(w.y[0]).toBeCloseTo(w.y[1], 3);                                // each long wall has one level top
   });
   it('no surface: unchanged flat roof', () => {
     const flat = buildBuildingGeometry(meta, fc(house)).roofs;
@@ -178,7 +186,9 @@ describe('wall patchwork texture', () => {
     }
   });
   it('a long wall split into pieces (pitched roofs) still samples the whole edge', () => {
-    const n = 100, surface = { width: n, height: n, resolution: 1, data: new Float32Array(n * n).fill(20) };
+    const n = 100, data = new Float32Array(n * n);                                  // a hip roof, which is built on a fine grid
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) { const x = c + 0.5, y = n - r - 0.5, d = Math.min(x - 10, 50 - x, y - 20, 40 - y); data[r * n + c] = d < 0 ? 12 : 20 + Math.min(1, d / 10) * 5; }
+    const surface = { width: n, height: n, resolution: 1, data };
     const w = buildBuildingGeometry(meta, fc(poly([sq(10, 20, 50, 40)], { base_z: 12, height: 8 })), surface).walls;
     const e = w.getAttribute('wallEdge'), t = w.getAttribute('wallDetail');
     expect(w.getAttribute('position').count).toBeGreaterThan(16);                    // split into more than 4 quads
