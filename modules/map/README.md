@@ -64,6 +64,8 @@ Walls are no longer mottled grey: `facade.js` decides each building's look from 
 - **Material:** brick, stone, render or cladding, from `building:material`; when untagged, red-ish photo colour means brick, pale means render, and
   the rest is a seeded mix of brick, render and stone. Render comes in a pastel palette (cream, white, pale yellow, pink, blue-grey). `building:colour`
   tints the wall when tagged. Brick and stone are courses and blocks that fade out when too fine for the pixels.
+- **Windows, doors and shopfronts** are currently switched off (`FACADE_WINDOWS` in `buildings.js`): they looked too regular, so walls are plain brick, stone
+  or render. The rest of this section describes what the switch turns on.
 - **Windows:** a grid per storey, with sills and frames (sash bars on house windows), centred in bays with a blank margin at the corners. House windows for
   houses and plain buildings, big windows for flats, offices and anything over 15 m, tall narrow ones for churches, none for sheds, garages, barns,
   warehouses and anything under 3.2 m. Floors are `building:levels` apart (the height divided by the levels), else 2.8 m (3.4 m for large, 6 m for tall).

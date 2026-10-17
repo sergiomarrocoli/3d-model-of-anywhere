@@ -38,6 +38,7 @@ export const WALL_MOTTLE = 0.12;     // +/- brightness variation
 // The facade, drawn over the wall's patchwork colour: material (brick, stone, render, cladding: from the tag, else guessed from the colour of the imagery),
 // plinth, a grid of windows per storey with sills and frames, doors, shopfronts with a fascia, and a coping line along the top. Everything is addressed in
 // metres along and up the wall, so it runs on across the pieces a wall is split into, and fades out when it is too fine for the pixels (fwidth).
+const FACADE_WINDOWS = false;   // windows, doors and shopfronts on the walls: off, plain brick/stone/render only (they looked too regular)
 const FACADE_GLSL = `
         float fAlong = vWallDetail.x, fV = vWallDetail.y - vFacade.x, fTop = vFacade.y - vFacade.x, fL = vFacade.z, fFloor = max(vFacade.w, 1.0);
         float fMat = vLook.x, fWin = vLook.y, fSeed = vLook.z, fShop = vLook.w;
@@ -66,7 +67,7 @@ const FACADE_GLSL = `
         }
         albedo *= 1.0 - 0.3 * (1.0 - smoothstep(0.0, 0.5, fV));                      // damp plinth
         albedo = mix(albedo, vec3(0.62), 0.3 * (1.0 - smoothstep(0.0, 0.22, fTop - fV)) * step(0.0, fTop - fV));   // coping along the top
-        if (fWin > 0.5 && fL > 2.4) {
+        if (${FACADE_WINDOWS ? 'true' : 'false'} && fWin > 0.5 && fL > 2.4) {
           float margin = fWin > 2.5 ? 1.8 : 1.0, usable = fL - 2.0 * margin;
           float bayT = (fWin < 1.5 ? 3.1 : fWin < 2.5 ? 3.2 : 4.2) * (0.9 + 0.25 * fract(fSeed * 11.0));
           float u = fAlong - margin;
@@ -139,7 +140,7 @@ export function addWallPatchwork(material, { patchM = WALL_PATCH_M, variation = 
         vec4 sampledDiffuseColor = vec4(wallCol, 1.0);
         diffuseColor *= sampledDiffuseColor;`);
   };
-  material.customProgramCacheKey = () => 'wallfacade2';
+  material.customProgramCacheKey = () => 'wallfacade3';
   material.needsUpdate = true;
 }
 
