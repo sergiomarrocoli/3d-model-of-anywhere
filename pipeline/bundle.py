@@ -26,7 +26,8 @@ from shapely.geometry import mapping
 from . import PIPELINE_VERSION
 
 BUNDLE_VERSION = 1
-BUILDING_PROPS = ("building", "osm_id", "height", "base_z", "height_source")
+BUILDING_PROPS = ("building", "osm_id", "height", "base_z", "height_source",
+                  "building:levels", "building:material", "building:colour", "shop", "amenity")   # the last five dress the walls in the client
 COORD_DECIMALS = 2  # centimetres
 
 

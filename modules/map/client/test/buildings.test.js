@@ -239,6 +239,27 @@ describe('a footprint bigger than its roof (bare ground inside the outline)', ()
   });
 });
 
+describe('facade inputs on the walls', () => {
+  const house = poly([sq(10, 20, 30, 40)], { base_z: 12, height: 8, building: 'house', 'building:levels': '2', 'building:material': 'brick', 'building:colour': 'red', osm_id: 'way/7' });
+  const g = buildBuildingGeometry(meta, fc(house)), n = g.walls.getAttribute('position').count;
+  const fac = g.walls.getAttribute('wallFacade'), look = g.walls.getAttribute('wallLook'), tint = g.walls.getAttribute('wallTint');
+  it('every wall vertex has the base elevation, the wall top, the wall length and the floor height', () => {
+    expect(fac.count).toBe(n); expect(look.count).toBe(n); expect(tint.count).toBe(n);
+    for (let i = 0; i < n; i++) { expect(fac.getX(i)).toBe(12); expect(fac.getY(i)).toBe(20); expect(fac.getW(i)).toBeCloseTo(4); expect(fac.getZ(i)).toBeCloseTo(20); }   // 8 m high over 2 levels: 4 m floors; 20 m walls
+  });
+  it('and the look from the tags: brick, house windows, no shopfront, the tagged colour', () => {
+    expect(look.getX(0)).toBe(0); expect(look.getY(0)).toBe(1); expect(look.getW(0)).toBe(0); expect(look.getZ(0)).toBeGreaterThanOrEqual(0); expect(look.getZ(0)).toBeLessThan(1);
+    expect([tint.getX(0), tint.getY(0), tint.getZ(0), tint.getW(0)].map((v) => +v.toFixed(2))).toEqual([0.62, 0.22, 0.18, 1]);
+  });
+  it('the top follows a pitched roof: the wall top elevation at each end is that end\'s roof height', () => {
+    const n2 = 100, data = new Float32Array(n2 * n2); for (let r = 0; r < n2; r++) for (let c = 0; c < n2; c++) { const x = c + 0.5, y = n2 - r - 0.5; data[r * n2 + c] = x >= 10 && x <= 50 && y >= 20 && y <= 40 ? 26 - 6 * (Math.abs(y - 30) / 10) : 12; }
+    const gg = buildBuildingGeometry(meta, fc(poly([sq(10, 20, 50, 40)], { base_z: 12, height: 10 })), { width: n2, height: n2, resolution: 1, data });
+    const f2 = gg.walls.getAttribute('wallFacade'), p2 = gg.walls.getAttribute('position'), tops = new Set();
+    for (let i = 0; i < f2.count; i++) { if (i % 4 >= 2) expect(f2.getY(i)).toBeCloseTo(p2.getY(i) + 10, 3); tops.add(+f2.getY(i).toFixed(2)); }   // top vertices: the attribute is the world height plus zRef (10)
+    expect(tops.size).toBeGreaterThan(1);                                                                      // the gable-end walls reach the ridge, the long walls stop at the eaves
+  });
+});
+
 describe('wall patchwork texture', () => {
   const g = buildBuildingGeometry(meta, fc(poly([sq(10, 20, 30, 40)])));
   it('gives walls metres-along and elevation attributes, continuous along a wall', () => {

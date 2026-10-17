@@ -25,7 +25,8 @@ ATTRIBUTION = "© OpenStreetMap contributors (ODbL)"
 CRS = "EPSG:27700"
 CACHE_DIR = Path("data/cache/overpass")
 CACHE_TTL_S = 7 * 24 * 3600  # building footprints change slowly; this keeps repeat builds off the public servers
-KEEP_TAGS = ("building", "height", "building:levels")
+# `building:levels` and the tags after it are not used by the pipeline itself: they go into the bundle for the client to dress the walls with
+KEEP_TAGS = ("building", "height", "building:levels", "building:material", "building:colour", "shop", "amenity")
 
 
 def _to_wgs84_bbox(bbox):
@@ -99,13 +100,17 @@ def _overpass(query, cache_dir=None, ttl=None):
     raise RuntimeError("All Overpass endpoints failed: " + "; ".join(errors))
 
 
-def fetch_buildings(bbox, out):
-    """bbox = (minE, minN, maxE, maxN) in EPSG:27700. Writes GeoJSON (27700 metres) to `out`."""
+def building_query(bbox):
+    """The Overpass query for the buildings in a bbox (EPSG:27700). Its text is the disk cache's key."""
     s, w, n, e = _to_wgs84_bbox(bbox)
     # `out geom;` (tags, and member geometry for relations). Adding `tags` here would strip the members from every
     # multipolygon relation, silently dropping courtyard and other large buildings.
-    q = f'[out:json][timeout:60];(way["building"]({s},{w},{n},{e});relation["building"]({s},{w},{n},{e}););out geom;'
-    resp = _overpass(q)
+    return f'[out:json][timeout:60];(way["building"]({s},{w},{n},{e});relation["building"]({s},{w},{n},{e}););out geom;'
+
+
+def fetch_buildings(bbox, out):
+    """bbox = (minE, minN, maxE, maxN) in EPSG:27700. Writes GeoJSON (27700 metres) to `out`."""
+    resp = _overpass(building_query(bbox))
 
     to_bng = Transformer.from_crs("EPSG:4326", CRS, always_xy=True).transform
     rows = []

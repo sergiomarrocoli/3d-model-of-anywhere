@@ -56,9 +56,29 @@ Each zone gets its own flat, shed or gable roof, and:
 - if any zone still fits no simple roof the whole building keeps the raw DSM roof (about 7 percent of Newtown, 17 percent of Bath, mostly very
   complex buildings such as the Abbey).
 
+### Facades (walls)
+
+Walls are no longer mottled grey: `facade.js` decides each building's look from its OSM tags and size (`facadeLook`), and the wall shader draws it
+(`FACADE_GLSL` in `buildings.js`), addressed in metres along and up each wall so it carries on across the pieces a wall is split into:
+
+- **Material:** brick, stone, render or cladding, from `building:material`; when untagged, red-ish photo colour means brick, pale means render, and
+  the rest is a seeded mix of brick, render and stone. Render comes in a pastel palette (cream, white, pale yellow, pink, blue-grey). `building:colour`
+  tints the wall when tagged. Brick and stone are courses and blocks that fade out when too fine for the pixels.
+- **Windows:** a grid per storey, with sills and frames (sash bars on house windows), centred in bays with a blank margin at the corners. House windows for
+  houses and plain buildings, big windows for flats, offices and anything over 15 m, tall narrow ones for churches, none for sheds, garages, barns,
+  warehouses and anything under 3.2 m. Floors are `building:levels` apart (the height divided by the levels), else 2.8 m (3.4 m for large, 6 m for tall).
+  Windows only appear where a whole storey fits under the wall top at that point, so gable ends step up with the roof.
+- **Ground floor:** some bays are doors (in a colour picked per building); a building with a `shop` or a shopfront `amenity` (pub, cafe, bank...) gets wide
+  shop glazing with a fascia sign. Plus a damp plinth along the bottom and a coping line along the top.
+- Each building's look is stable (a seed from its OSM id), so neighbours differ and it never changes between loads.
+
+The tags come from the pipeline: `building:levels`, `building:material`, `building:colour`, `shop` and `amenity` are fetched and written into the bundle.
+`python3 -m pipeline.retag data/bundles/area_x` adds them to a bundle built before that, from the cached Overpass answer (no network; bundles whose
+cached answer has gone are left alone). Most buildings have no such tags, so most of the look is the guess from type and height.
+
 ## Inside
 
-`bundle.js` loader · `terrain.js` heightmap mesh · `buildings.js` extruded footprints, roofs, wall texture · `roof.js` fits a clean roof to the DSM ·
+`facade.js` the look of a building's walls from its tags · `bundle.js` loader · `terrain.js` heightmap mesh · `buildings.js` extruded footprints, roofs, wall texture · `roof.js` fits a clean roof to the DSM ·
 `collision.js` circle-vs-polygon with a spatial grid · `slope.js` · `edge.js` · `raycast.js` · `heightmap.js` sampling ·
 `flycam.js` and `debug.js` (the `?fly` camera and the `?debug` inspector, for looking at a map without a game).
 

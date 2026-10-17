@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { toWorld } from './coords.js';
 import { sampleHeight } from './heightmap.js';
+import { facadeLook } from './facade.js';
 import { fitBuildingRoof, inside } from './roof.js';
 
 export const DEFAULT_HEIGHT_M = 6;
@@ -34,6 +35,71 @@ export const WALL_PATCH_M = 0.6;     // size of the larger grain features
 export const WALL_VARIATION = 0.3;   // 0 = flat average colour, 1 = fully the randomly picked colour
 export const WALL_MOTTLE = 0.12;     // +/- brightness variation
 
+// The facade, drawn over the wall's patchwork colour: material (brick, stone, render, cladding: from the tag, else guessed from the colour of the imagery),
+// plinth, a grid of windows per storey with sills and frames, doors, shopfronts with a fascia, and a coping line along the top. Everything is addressed in
+// metres along and up the wall, so it runs on across the pieces a wall is split into, and fades out when it is too fine for the pixels (fwidth).
+const FACADE_GLSL = `
+        float fAlong = vWallDetail.x, fV = vWallDetail.y - vFacade.x, fTop = vFacade.y - vFacade.x, fL = vFacade.z, fFloor = max(vFacade.w, 1.0);
+        float fMat = vLook.x, fWin = vLook.y, fSeed = vLook.z, fShop = vLook.w;
+        float px = max(fwidth(fV), 1e-4);                                           // metres per pixel up the wall: patterns finer than this fade away
+        float fine = 1.0 - clamp(px / 0.12, 0.0, 1.0), coarse = 1.0 - clamp(px / 0.6, 0.0, 1.0);
+        float luma = dot(wallCol, vec3(0.3, 0.59, 0.11));
+        float pick = fract(fSeed * 23.0);                                              // when nothing is tagged: red-ish walls are brick, pale ones render, the rest a mix
+        if (fMat < -0.5) fMat = (wallCol.r > wallCol.g * 1.1 && wallCol.r > wallCol.b * 1.18) ? 0.0 : (luma > 0.5 ? 2.0 : (pick < 0.3 ? 0.0 : (pick < 0.65 ? 2.0 : 1.0)));
+        float pal = fract(fSeed * 5.0);
+        vec3 renderCol = pal < 0.2 ? vec3(0.9, 0.86, 0.72) : pal < 0.4 ? vec3(0.9, 0.9, 0.88) : pal < 0.6 ? vec3(0.88, 0.8, 0.55) : pal < 0.8 ? vec3(0.86, 0.7, 0.66) : vec3(0.7, 0.76, 0.8);
+        vec3 matCol = fMat < 0.5 ? mix(vec3(0.52, 0.26, 0.2), vec3(0.64, 0.4, 0.3), fract(fSeed * 7.0))
+                    : fMat < 1.5 ? mix(vec3(0.56, 0.52, 0.42), vec3(0.7, 0.64, 0.52), fract(fSeed * 5.0))
+                    : fMat < 2.5 ? renderCol : vec3(0.5, 0.53, 0.56);
+        vec3 albedo = mix(wallCol, pow(matCol, vec3(2.2)) * (0.85 + 0.5 * luma), 0.7);
+        albedo = mix(albedo, pow(vTint.rgb, vec3(2.2)), vTint.a * 0.85);
+        if (fMat < 0.5) {                                                           // brick: courses 0.22 m, bricks 0.55 m, each a little different
+          float c = fV / 0.22, row = floor(c), bx = fAlong / 0.55 + mod(row, 2.0) * 0.5;
+          float mortar = max(1.0 - smoothstep(0.0, 0.12, fract(c)), 1.0 - smoothstep(0.0, 0.05, fract(bx)));
+          albedo *= (1.0 - 0.3 * mortar * fine) * (1.0 + 0.16 * (wallHash(vec2(floor(bx), row)) - 0.5) * fine);
+        } else if (fMat < 1.5) {                                                    // stone: irregular blocks
+          float c = fV / 0.45, row = floor(c), bx = fAlong / 0.95 + wallHash(vec2(row, 3.0)) * 3.0;
+          float mortar = max(1.0 - smoothstep(0.0, 0.07, fract(c)), 1.0 - smoothstep(0.0, 0.035, fract(bx)));
+          albedo *= (1.0 - 0.22 * mortar * fine) * (0.86 + 0.28 * wallHash(vec2(floor(bx), row)) * coarse + 0.14 * (1.0 - coarse));
+        } else if (fMat > 2.5) {                                                    // cladding: vertical ribs
+          albedo *= 1.0 - 0.14 * (1.0 - smoothstep(0.0, 0.1, fract(fAlong / 0.6))) * fine;
+        }
+        albedo *= 1.0 - 0.3 * (1.0 - smoothstep(0.0, 0.5, fV));                      // damp plinth
+        albedo = mix(albedo, vec3(0.62), 0.3 * (1.0 - smoothstep(0.0, 0.22, fTop - fV)) * step(0.0, fTop - fV));   // coping along the top
+        if (fWin > 0.5 && fL > 2.4) {
+          float margin = fWin > 2.5 ? 1.8 : 1.0, usable = fL - 2.0 * margin;
+          float bayT = (fWin < 1.5 ? 3.1 : fWin < 2.5 ? 3.0 : 5.0) * (0.9 + 0.25 * fract(fSeed * 11.0));
+          float u = fAlong - margin;
+          if (usable > 1.2 && u > 0.0 && u < usable) {
+            float n = max(1.0, floor(usable / bayT + 0.5)), bw = usable / n, bi = floor(u / bw), lx = u - (bi + 0.5) * bw;
+            float k = floor(fV / fFloor), ly = fV - k * fFloor, fits = step((k + 1.0) * fFloor, fTop - 0.3);
+            float ww = fWin < 1.5 ? 1.1 : fWin < 2.5 ? min(bw * 0.62, 2.1) : 0.8, wh = fWin < 1.5 ? 1.4 : fWin < 2.5 ? 1.6 : 3.0, sill = fWin < 2.5 ? 0.32 * fFloor : 1.4;
+            float isDoor = 0.0, isShop = 0.0;
+            if (k < 0.5) {
+              if (fShop > 0.5 && fWin < 3.5) { isShop = 1.0; ww = bw * 0.86; wh = min(2.5, fFloor - 0.6); sill = 0.4; }
+              else if (fWin < 2.5 && wallHash(vec2(bi, fSeed * 97.0)) < 0.22) { isDoor = 1.0; ww = 1.0; wh = 2.1; sill = 0.0; }
+            }
+            float a = px * 1.2;
+            float inX = smoothstep(-ww * 0.5 - a, -ww * 0.5 + a, lx) * (1.0 - smoothstep(ww * 0.5 - a, ww * 0.5 + a, lx));
+            float inY = smoothstep(sill - a, sill + a, ly) * (1.0 - smoothstep(sill + wh - a, sill + wh + a, ly));
+            float inside = inX * inY * fits * coarse;
+            float edge = min(min(lx + ww * 0.5, ww * 0.5 - lx), min(ly - sill, sill + wh - ly));         // metres in from the edge of the opening
+            vec3 frameCol = fract(fSeed * 13.0) < 0.6 ? vec3(0.8, 0.8, 0.76) : vec3(0.1, 0.08, 0.07);
+            vec3 glass = mix(vec3(0.03, 0.05, 0.08), vec3(0.16, 0.22, 0.3), smoothstep(0.0, 1.0, (ly - sill) / wh));
+            vec3 doorCol = fract(fSeed * 29.0) < 0.25 ? vec3(0.05, 0.14, 0.3) : fract(fSeed * 29.0) < 0.5 ? vec3(0.4, 0.07, 0.06) : fract(fSeed * 29.0) < 0.75 ? vec3(0.04, 0.2, 0.1) : vec3(0.06, 0.05, 0.05);
+            vec3 opening = isDoor > 0.5 ? doorCol : mix(glass, frameCol, 1.0 - smoothstep(0.04, 0.09, edge));
+            if (isDoor < 0.5 && isShop < 0.5 && fWin < 2.5) opening = mix(opening, frameCol, 0.9 * (1.0 - smoothstep(0.0, 0.05, abs(lx))) * fine + 0.8 * (1.0 - smoothstep(0.0, 0.05, abs(ly - sill - wh * 0.6))) * fine * inX);   // sash bars
+            albedo = mix(albedo, opening, inside);
+            float onSill = smoothstep(sill - 0.1 - a, sill - 0.1 + a, ly) * (1.0 - smoothstep(sill - a, sill + a, ly)) * inX * step(0.5, 1.0 - isDoor) * fits * coarse;
+            albedo = mix(albedo, vec3(0.7, 0.68, 0.62), 0.8 * onSill);
+            if (isShop > 0.5) {                                                      // a fascia sign above the shopfront
+              float fas = smoothstep(sill + wh + 0.12 - a, sill + wh + 0.12 + a, ly) * (1.0 - smoothstep(sill + wh + 0.72 - a, sill + wh + 0.72 + a, ly)) * smoothstep(-bw * 0.5, -bw * 0.5 + 0.05, lx) * (1.0 - smoothstep(bw * 0.5 - 0.05, bw * 0.5, lx));
+              albedo = mix(albedo, mix(vec3(0.06, 0.1, 0.2), vec3(0.3, 0.06, 0.05), step(0.5, fract(fSeed * 17.0))), 0.9 * fas * fits * coarse);
+            }
+          }
+        }
+        wallCol = albedo;`;
+
 /** Wall shading: needs the `wallDetail` (along metres, elevation metres) and `wallEdge` (edge start uv, end uv) attributes. */
 export function addWallPatchwork(material, { patchM = WALL_PATCH_M, variation = WALL_VARIATION, mottle = WALL_MOTTLE } = {}) {
   material.onBeforeCompile = (shader) => {
@@ -41,12 +107,15 @@ export function addWallPatchwork(material, { patchM = WALL_PATCH_M, variation = 
     shader.uniforms.uVariation = { value: variation };
     shader.uniforms.uMottle = { value: mottle };
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec2 wallDetail;\nattribute vec4 wallEdge;\nvarying vec2 vWallDetail;\nvarying vec4 vWallEdge;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWallDetail = wallDetail;\nvWallEdge = wallEdge;');
+      .replace('#include <common>', '#include <common>\nattribute vec2 wallDetail;\nattribute vec4 wallEdge;\nattribute vec4 wallFacade;\nattribute vec4 wallLook;\nattribute vec4 wallTint;\nvarying vec2 vWallDetail;\nvarying vec4 vWallEdge;\nvarying vec4 vFacade;\nvarying vec4 vLook;\nvarying vec4 vTint;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWallDetail = wallDetail;\nvWallEdge = wallEdge;\nvFacade = wallFacade;\nvLook = wallLook;\nvTint = wallTint;');
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>
         varying vec2 vWallDetail;
         varying vec4 vWallEdge;
+        varying vec4 vFacade;   // base elevation, wall top elevation at this column, wall length, floor height
+        varying vec4 vLook;     // material, window style, seed, shopfront
+        varying vec4 vTint;     // tagged colour rgb, strength
         uniform float uPatchM;
         uniform float uVariation;
         uniform float uMottle;
@@ -65,10 +134,11 @@ export function addWallPatchwork(material, { patchM = WALL_PATCH_M, variation = 
         vec3 wallPick = texture2D(map, mix(vWallEdge.xy, vWallEdge.zw, wallT)).rgb;
         float wallMottleN = wallNoise(wallP * 3.1 + 17.0) * 0.6 + wallNoise(wallP * 7.3 + 5.0) * 0.4;
         vec3 wallCol = mix(wallMean, wallPick, uVariation) * (1.0 + uMottle * (wallMottleN * 2.0 - 1.0) * 1.6);
+        ${FACADE_GLSL}
         vec4 sampledDiffuseColor = vec4(wallCol, 1.0);
         diffuseColor *= sampledDiffuseColor;`);
   };
-  material.customProgramCacheKey = () => 'wallpatchwork2';
+  material.customProgramCacheKey = () => 'wallfacade1';
   material.needsUpdate = true;
 }
 
@@ -177,7 +247,7 @@ function refineTriangles(verts, tris, maxLen, creases = []) {
  */
 export function buildBuildingGeometry(meta, buildings, surface = null) {
   const [W, H] = meta.size_m;
-  const wp = [], wn = [], wuv = [], wdt = [], wedge = [], wi = [];
+  const wp = [], wn = [], wuv = [], wdt = [], wedge = [], wi = [], wfac = [], wlook = [], wtint = [];
   const rp = [], rn = [], ruv = [], ri = [];
 
   for (const f of buildings.features) {
@@ -187,6 +257,11 @@ export function buildBuildingGeometry(meta, buildings, surface = null) {
     const base = f.properties.base_z ?? meta.heightmap.min;
     const height = f.properties.height ?? DEFAULT_HEIGHT_M;
     const flatTop = base + height;
+    const look = facadeLook(f.properties, height);
+    // Per-wall facade inputs for the shader (see FACADE_GLSL): base elevation, the wall's top elevation at each end, its length and the floor height, then the look
+    const pushFacade = (top0, top1, length) => {
+      for (const top of [top0, top1, top1, top0]) { wfac.push(base, top, length, look.floorHeight); wlook.push(look.material, look.windows, look.seed, look.shopfront); wtint.push(...look.tint); }
+    };
     // Absolute roof elevation at a footprint point: the DSM, kept between a floor and a cap so tree canopy and
     // gaps cannot make a roof spike or sink through the ground.
     const fit = surface ? fitBuildingRoof(rings, (x, y) => sampleHeight(surface, x, y), (x, y) => nearestEdge(rings, x, y).d, { groundZ: base + GROUND_ABOVE_BASE_M }) : null;      // null: no simple roof fits, use the raw DSM
@@ -228,6 +303,7 @@ export function buildBuildingGeometry(meta, buildings, surface = null) {
           const ux = (p1[0] - p0[0]) / len, uy = (p1[1] - p0[1]) / len;
           const along = (x, y) => (x - p0[0]) * ux + (y - p0[1]) * uy;
           wdt.push(along(x0, y0), base, along(x1, y1), base, along(x1, y1), z1, along(x0, y0), z0);
+          pushFacade(z0, z1, len);
           const eA = [(p0[0] + sx) / W, 1 - (p0[1] + sy) / H], eB = [(p1[0] + sx) / W, 1 - (p1[1] + sy) / H];
           for (let n = 0; n < 4; n++) wedge.push(...eA, ...eB);
           wi.push(k, k + 1, k + 2, k, k + 2, k + 3);
@@ -283,6 +359,7 @@ export function buildBuildingGeometry(meta, buildings, surface = null) {
         const ua = [(p0[0] + sx) / W, 1 - (p0[1] + sy) / H], ub = [(p1[0] + sx) / W, 1 - (p1[1] + sy) / H];
         wuv.push(...ua, ...ub, ...ub, ...ua);
         wdt.push(0, l0, len, l1, len, h1, 0, h0);
+        pushFacade(h0, h1, len);
         for (let n = 0; n < 4; n++) wedge.push(...ua, ...ub);
         wi.push(k, k + 1, k + 2, k, k + 2, k + 3);
       }
@@ -308,6 +385,9 @@ export function buildBuildingGeometry(meta, buildings, surface = null) {
   const wallGeo = make(wp, wn, wuv, wi);
   wallGeo.setAttribute('wallDetail', new THREE.Float32BufferAttribute(wdt, 2));
   wallGeo.setAttribute('wallEdge', new THREE.Float32BufferAttribute(wedge, 4));
+  wallGeo.setAttribute('wallFacade', new THREE.Float32BufferAttribute(wfac, 4));
+  wallGeo.setAttribute('wallLook', new THREE.Float32BufferAttribute(wlook, 4));
+  wallGeo.setAttribute('wallTint', new THREE.Float32BufferAttribute(wtint, 4));
   return { walls: wallGeo, roofs: make(rp, rn, ruv, ri) };
 }
 
