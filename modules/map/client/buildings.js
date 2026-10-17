@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { toWorld } from './coords.js';
 import { sampleHeight } from './heightmap.js';
-import { fitRoof, inside } from './roof.js';
+import { fitBuildingRoof, inside } from './roof.js';
 
 export const DEFAULT_HEIGHT_M = 6;
 // Walls are coloured by the imagery just inside the footprint edge: sampling exactly on the edge often hits the
@@ -16,6 +16,7 @@ export const WALL_BRIGHTNESS = 0.75;
 export const ROOF_GRID_M = 2;          // roofs that follow the raw DSM are refined until no edge is longer than this
 export const ROOF_INSET_M = 1.5;       // within this distance of the footprint edge the DSM is read on this inset line, so the roof edge is crisp (walls drop vertically from it) and not smeared with the ground or a neighbour
 export const MIN_ROOF_ABOVE_BASE_M = 2;
+export const GROUND_ABOVE_BASE_M = 1.5;   // a flat zone of the roof fit no higher than this above the building's base is bare ground, not roof: it is left out
 // An outline is often a metre or three bigger than the roof (a strip of car park or lawn inside it), so the DSM right at the edge is ground.
 // The roof height at an edge is therefore read further in, along the inward normal at these depths, as a high percentile (the roof, not the rim),
 // and nothing within RIM_DEPTH_M of the edge may dip below it: the wall goes straight up to the eaves instead of the roof sloping down to the ground.
@@ -188,9 +189,10 @@ export function buildBuildingGeometry(meta, buildings, surface = null) {
     const flatTop = base + height;
     // Absolute roof elevation at a footprint point: the DSM, kept between a floor and a cap so tree canopy and
     // gaps cannot make a roof spike or sink through the ground.
-    const fit = surface ? fitRoof(rings, (x, y) => sampleHeight(surface, x, y), (x, y) => nearestEdge(rings, x, y).d) : null;
+    const fit = surface ? fitBuildingRoof(rings, (x, y) => sampleHeight(surface, x, y), (x, y) => nearestEdge(rings, x, y).d, { groundZ: base + GROUND_ABOVE_BASE_M }) : null;      // null: no simple roof fits, use the raw DSM
     const clampZ = (z) => Math.min(base + 2 * height + 2, Math.max(base + MIN_ROOF_ABOVE_BASE_M, z));
-    const roofZ = fit ? (x, y) => clampZ(fit.z(x, y)) : surface
+    // `zone` (fitted roofs only) says which zone's roof to read: a point on a cut belongs to two, so the caller picks (a wall piece by its middle)
+    const roofZ = fit ? (x, y, zone = fit.zoneAt(x, y)) => clampZ(zone.model.z(x, y)) : surface
       ? (x, y) => {
           const e = nearestEdge(rings, x, y), eave = eaveHeight(rings, surface, e);
           let z;
@@ -214,8 +216,10 @@ export function buildBuildingGeometry(meta, buildings, surface = null) {
         const pts = splitEdgeAtCreases(p0, p1, maxLen, creases);
         for (let j = 0; j + 1 < pts.length; j++) {
           const [x0, y0] = pts[j], [x1, y1] = pts[j + 1];
-          const k = wp.length / 3;
-          wp.push(...toWorld(meta, x0, y0, base), ...toWorld(meta, x1, y1, base), ...toWorld(meta, x1, y1, roofZ(x1, y1)), ...toWorld(meta, x0, y0, roofZ(x0, y0)));
+          const zone = fit?.zoneAt((x0 + x1) / 2, (y0 + y1) / 2);
+          if (zone?.ground) continue;                                  // no building here: the outline takes in bare ground
+          const k = wp.length / 3, z0 = roofZ(x0, y0, zone), z1 = roofZ(x1, y1, zone);
+          wp.push(...toWorld(meta, x0, y0, base), ...toWorld(meta, x1, y1, base), ...toWorld(meta, x1, y1, z1), ...toWorld(meta, x0, y0, z0));
           for (let n = 0; n < 4; n++) wn.push(nx, 0, nz);
           const a = [(x0 + sx) / W, 1 - (y0 + sy) / H], b = [(x1 + sx) / W, 1 - (y1 + sy) / H];
           wuv.push(...a, ...b, ...b, ...a); // same UV top and bottom: colour is constant up each wall
@@ -223,7 +227,7 @@ export function buildBuildingGeometry(meta, buildings, surface = null) {
           // of the whole edge's two ends, so every piece of a wall draws from the same colours.
           const ux = (p1[0] - p0[0]) / len, uy = (p1[1] - p0[1]) / len;
           const along = (x, y) => (x - p0[0]) * ux + (y - p0[1]) * uy;
-          wdt.push(along(x0, y0), base, along(x1, y1), base, along(x1, y1), roofZ(x1, y1), along(x0, y0), roofZ(x0, y0));
+          wdt.push(along(x0, y0), base, along(x1, y1), base, along(x1, y1), z1, along(x0, y0), z0);
           const eA = [(p0[0] + sx) / W, 1 - (p0[1] + sy) / H], eB = [(p1[0] + sx) / W, 1 - (p1[1] + sy) / H];
           for (let n = 0; n < 4; n++) wedge.push(...eA, ...eB);
           wi.push(k, k + 1, k + 2, k, k + 2, k + 3);
@@ -236,16 +240,60 @@ export function buildBuildingGeometry(meta, buildings, surface = null) {
     const base2d = THREE.ShapeUtils.triangulateShape(rings[0].map(([x, y]) => new THREE.Vector2(x, y)), rings.slice(1).map((r) => r.map(([x, y]) => new THREE.Vector2(x, y))));
     const verts = flat.map(([x, y]) => [x, y]);
     const tris = surface ? refineTriangles(verts, base2d, maxLen, creases) : base2d;
-    const k0 = rp.length / 3;
-    for (const [x, y] of verts) {
-      rp.push(...toWorld(meta, x, y, roofZ(x, y)));
-      rn.push(0, 1, 0);
-      ruv.push(x / W, 1 - y / H);
-    }
-    for (const [a, b, c] of tris) {
+    const upFace = (ia, ib, ic, a, b, c) => {       // push one roof triangle, wound so it faces up in world space
       const [ax, ay] = verts[a], [bx, by] = verts[b], [cx, cy] = verts[c];
       const ccw = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax) > 0; // CCW in local x/y
-      if (ccw) ri.push(k0 + a, k0 + b, k0 + c); else ri.push(k0 + a, k0 + c, k0 + b); // world Z = -y mirrors the plan, but three's front face is CCW seen from above (+Y)
+      if (ccw) ri.push(ia, ib, ic); else ri.push(ia, ic, ib);       // world Z = -y mirrors the plan, but three's front face is CCW seen from above (+Y)
+    };
+    if (fit && fit.zones.length > 1) {
+      // Several zones: each triangle belongs to the zone its centre is in, and takes that zone's heights. A vertex on a cut is shared by triangles of
+      // two zones, so it is duplicated, one copy per zone; then a vertical step face fills the gap along every edge on a cut between two zones.
+      const copy = new Map(), onCut = new Map(), stride = verts.length + 1;
+      const vertexIn = (v, zone) => {
+        const key = v * 64 + zone.id; let i = copy.get(key);
+        if (i === undefined) { const [x, y] = verts[v]; i = rp.length / 3; rp.push(...toWorld(meta, x, y, roofZ(x, y, zone))); rn.push(0, 1, 0); ruv.push(x / W, 1 - y / H); copy.set(key, i); }
+        return i;
+      };
+      const onSameCut = (u, v) => fit.lines.some((L) => Math.abs(L(verts[u][0], verts[u][1])) < CREASE_EPS && Math.abs(L(verts[v][0], verts[v][1])) < CREASE_EPS);
+      for (const [a, b, c] of tris) {
+        const cx = (verts[a][0] + verts[b][0] + verts[c][0]) / 3, cy = (verts[a][1] + verts[b][1] + verts[c][1]) / 3, zone = fit.zoneAt(cx, cy);
+        if (!zone.ground) upFace(vertexIn(a, zone), vertexIn(b, zone), vertexIn(c, zone), a, b, c);
+        for (const [u, v] of [[a, b], [b, c], [c, a]]) {
+          if (!onSameCut(u, v)) continue;
+          const key = Math.min(u, v) * stride + Math.max(u, v), e = onCut.get(key) ?? { u, v, zones: new Map() };
+          if (!e.zones.has(zone.id)) e.zones.set(zone.id, { zone, cx, cy });
+          onCut.set(key, e);
+        }
+      }
+      for (const { u, v, zones } of onCut.values()) {
+        if (zones.size !== 2) continue;                                // an edge with one zone is on the outline, not between two roofs
+        const [A, B] = [...zones.values()];
+        const level = (p, Z) => (Z.zone.ground ? base : roofZ(p[0], p[1], Z.zone));      // beside bare ground the step goes right down to the base
+        const hu = [level(verts[u], A), level(verts[u], B)], hv = [level(verts[v], A), level(verts[v], B)];
+        if (Math.abs(hu[0] - hu[1]) < 0.05 && Math.abs(hv[0] - hv[1]) < 0.05) continue;       // the two roofs meet level: no step
+        const lowerIsA = hu[0] + hv[0] < hu[1] + hv[1], lower = lowerIsA ? A : B;
+        let p0 = verts[u], p1 = verts[v], l0 = Math.min(...hu), l1 = Math.min(...hv), h0 = Math.max(...hu), h1 = Math.max(...hv);
+        // wind like the outline walls: the face looks out to the right of p0 -> p1, which has to be the lower roof's side
+        if ((p1[0] - p0[0]) * (lower.cy - p0[1]) - (p1[1] - p0[1]) * (lower.cx - p0[0]) > 0) { [p0, p1] = [p1, p0]; [l0, l1] = [l1, l0]; [h0, h1] = [h1, h0]; }
+        const len = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
+        if (len < 1e-6) continue;
+        const nx2 = (p1[1] - p0[1]) / len, ny2 = -(p1[0] - p0[0]) / len, sx = -nx2 * WALL_SAMPLE_INSET_M, sy = -ny2 * WALL_SAMPLE_INSET_M, k = wp.length / 3;
+        wp.push(...toWorld(meta, p0[0], p0[1], l0), ...toWorld(meta, p1[0], p1[1], l1), ...toWorld(meta, p1[0], p1[1], h1), ...toWorld(meta, p0[0], p0[1], h0));
+        for (let n = 0; n < 4; n++) wn.push(nx2, 0, -ny2);
+        const ua = [(p0[0] + sx) / W, 1 - (p0[1] + sy) / H], ub = [(p1[0] + sx) / W, 1 - (p1[1] + sy) / H];
+        wuv.push(...ua, ...ub, ...ub, ...ua);
+        wdt.push(0, l0, len, l1, len, h1, 0, h0);
+        for (let n = 0; n < 4; n++) wedge.push(...ua, ...ub);
+        wi.push(k, k + 1, k + 2, k, k + 2, k + 3);
+      }
+    } else {
+      const k0 = rp.length / 3;
+      for (const [x, y] of verts) {
+        rp.push(...toWorld(meta, x, y, roofZ(x, y)));
+        rn.push(0, 1, 0);
+        ruv.push(x / W, 1 - y / H);
+      }
+      for (const [a, b, c] of tris) upFace(k0 + a, k0 + b, k0 + c, a, b, c);
     }
   }
 

@@ -60,3 +60,40 @@ describe('fitRoof', () => {
   });
   it('says nothing when there is almost no data (a tiny shed)', () => { expect(fit(rect(0, 0, 2, 2), () => 5)).toBeNull(); });
 });
+
+import { fitBuildingRoof } from '../roof.js';
+
+describe('fitBuildingRoof (zones)', () => {
+  const house = rect(10, 20, 50, 40);
+  const whole = (ring, surface) => fitBuildingRoof([ring], surface, dist([ring]));
+  it('a building that fits as one roof is one zone, no cuts, and may be a hip', () => {
+    const g = whole(house, (x, y) => 20 + 6 * (1 - Math.abs(y - 30) / 10) + noise(x, y) * 0.4);
+    expect(g.zones).toHaveLength(1); expect(g.lines).toHaveLength(0); expect(g.zones[0].model.kind).toBe('gable');
+    const h = whole(house, (x, y) => 20 + Math.min(6, 0.6 * Math.min(x - 10, 50 - x, y - 20, 40 - y)) + noise(y, x) * 0.4);
+    expect(h.zones).toHaveLength(1); expect(h.zones[0].model.kind).toBe('hip');
+  });
+  it('a tall block with a low annex becomes two flat zones, cut where the level changes, at each height', () => {
+    const r = whole(house, (x, y) => (x < 30 ? 28 : 18) + noise(x, y) * 0.5);
+    expect(r).not.toBeNull(); expect(r.zones).toHaveLength(2); expect(r.lines).toHaveLength(1);
+    expect(Math.abs(r.lines[0](30, 25))).toBeLessThan(1);                                                     // the cut is at x = 30
+    const left = r.zoneAt(15, 30), right = r.zoneAt(45, 30);
+    expect(left.model.kind).toBe('flat'); expect(right.model.kind).toBe('flat'); expect(left.model.z(15, 30)).toBeCloseTo(28, 0); expect(right.model.z(45, 30)).toBeCloseTo(18, 0);
+    expect(r.zoneAt(15, 30)).not.toBe(r.zoneAt(45, 30));
+  });
+  it('a gabled main roof with a flat wing is a gable zone and a flat zone', () => {
+    const r = whole(rect(10, 20, 60, 40), (x, y) => (x < 40 ? 20 + 6 * (1 - Math.abs(y - 30) / 10) : 21) + noise(x, y) * 0.3);
+    expect(r).not.toBeNull(); expect(r.zones.map((z) => z.model.kind).sort()).toEqual(['flat', 'gable']);
+    expect(r.creases.length).toBeGreaterThan(r.lines.length);                                                 // the cut and the gable's ridge
+  });
+  it('an L-shaped building with a tall wing and a low wing, turned at an angle, is cut along its own axes', () => {
+    const t = 0.5, rot = ([x, y]) => [x * Math.cos(t) - y * Math.sin(t), x * Math.sin(t) + y * Math.cos(t)], un = ([x, y]) => [x * Math.cos(t) + y * Math.sin(t), -x * Math.sin(t) + y * Math.cos(t)];
+    const ring = rect(0, 0, 40, 16).map(rot);
+    const r = whole(ring, (x, y) => (un([x, y])[0] < 24 ? 25 : 14) + noise(x, y) * 0.4);
+    expect(r.zones).toHaveLength(2); expect(Math.abs(r.lines[0](...rot([24, 8])))).toBeLessThan(1);
+  });
+  it('does not chop a noisy but fine roof, and gives up when a zone fits nothing', () => {
+    expect(whole(house, (x, y) => 22 + noise(x, y) * 1.5).zones).toHaveLength(1);
+    expect(whole(house, (x, y) => 20 + 12 * Math.abs(Math.sin(x / 3) * Math.cos(y / 2)))).toBeNull();
+  });
+  it('says nothing for a tiny building', () => { expect(whole(rect(0, 0, 2, 2), () => 5)).toBeNull(); });
+});
