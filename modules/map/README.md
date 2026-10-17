@@ -40,6 +40,22 @@ The raw DSM roof copes with outlines that are bigger than the roof (a 1-3 m rim 
 read further in, as a high percentile of the DSM 1-4 m inside it, pooled along 6 m of the edge so neighbouring wall pieces agree, and nothing within 4.5 m of
 an edge dips below it. So the wall goes straight up to the eaves instead of the roof sloping down to the ground like a tent.
 
+### Zones (buildings of several levels or wings)
+
+A building no single roof fits (a tall block with a low annex, a main roof with a flat wing, a church with a lower aisle) is cut into **zones**
+(`fitBuildingRoof` in `roof.js`), the way a regression tree splits data: try the straight cut, across either of the building's own axes, that best
+separates the DSM into two levels; keep it if the two halves fit clearly better than the whole (`SPLIT_GAIN`); carry on into each half while it still
+fits badly (`SPLIT_ERROR_M`; zones are at least 3 m wide, up to 8 zones). Each cut is then placed to 0.1 m on the steepest part of the step in the DSM.
+Each zone gets its own flat, shed or gable roof, and:
+
+- the roof triangles are split exactly on every cut, each triangle takes the zone it is in, and a **vertical step face** fills the gap between two
+  roofs along the cut (a vertex on a cut is duplicated, one copy per zone);
+- a zone that is just **bare ground** (a flat zone within 1.5 m of the building's base: a 3 m or wider strip of car park or lawn the outline takes in) gets
+  no roof and no outline wall, and the step beside it is a wall straight down to the base. That clips the footprint to the real building, only where
+  the LiDAR clearly shows no roof (a building the LiDAR sees nothing of at all is not clipped away);
+- if any zone still fits no simple roof the whole building keeps the raw DSM roof (about 7 percent of Newtown, 17 percent of Bath, mostly very
+  complex buildings such as the Abbey).
+
 ## Inside
 
 `bundle.js` loader · `terrain.js` heightmap mesh · `buildings.js` extruded footprints, roofs, wall texture · `roof.js` fits a clean roof to the DSM ·

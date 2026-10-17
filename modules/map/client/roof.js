@@ -61,6 +61,12 @@ function fitPlane(pts, x0, y0) {
  *   when the roof is exactly flat-faced and the creases are enough; a hip bends along diagonals, so it needs a fine grid).
  */
 export function fitRoof(rings, height, distance) {
+  const sampled = sampleFootprint(rings, height, distance);
+  return sampled ? fitSamples(sampled.pts, sampled.frame, distance) : null;
+}
+
+/** The DSM sampled on a grid inside the footprint (clear of the edge), and the building's frame: its dominant direction and its extent in it. Null if too few samples. */
+export function sampleFootprint(rings, height, distance) {
   const outer = rings[0];
   const th = dominantAngle(outer), ca = Math.cos(th), sa = Math.sin(th);
   let amin = Infinity, amax = -Infinity, bmin = Infinity, bmax = -Infinity, x0 = 0, y0 = 0;
@@ -70,6 +76,16 @@ export function fitRoof(rings, height, distance) {
     const x = a * ca - b * sa, y = a * sa + b * ca;
     if (inside(rings, x, y) && distance(x, y) >= SAMPLE_INSET_M) pts.push([x, y, height(x, y)]);
   }
+  return pts.length < MIN_SAMPLES ? null : { pts, frame: { ca, sa, amin, amax, bmin, bmax, x0, y0 } };
+}
+
+/**
+ * The best simple roof for a set of samples in a frame (see sampleFootprint; for a zone the frame's extent is the zone's). `allowHip` lets a hip be
+ * considered (it needs the distance to the footprint edge, so only for a whole building); `gate` false returns the best fit even if it is a poor one
+ * (to decide whether to split), with its `error`.
+ */
+export function fitSamples(pts, frame, distance, { allowHip = true, gate = true } = {}) {
+  const { ca, sa, amin, amax, bmin, bmax, x0, y0 } = frame;
   if (pts.length < MIN_SAMPLES) return null;
   const zs = pts.map((p) => p[2]).sort((p, q) => p - q), med = percentile(zs, 0.5);
   const mae = (f) => pts.reduce((s, [x, y, z]) => s + Math.abs(f(x, y) - z), 0) / pts.length;
@@ -102,9 +118,9 @@ export function fitRoof(rings, height, distance) {
   const options = [];
   const gp = profile(gGable);
   if (gp.rise >= MIN_RISE_M) { const z = (x, y) => gp.eave + gp.rise * gGable(x, y); options.push({ kind: 'gable', z, creases: [(x, y) => cross(x, y) - wm], maxLen: Infinity, eave: gp.eave, peak: gp.eave + gp.rise, error: mae(z) }); }
-  const hp = profile(gHip);
+  const hp = allowHip ? profile(gHip) : { rise: 0 };
   if (hp.rise >= MIN_RISE_M) { const z = (x, y) => hp.eave + hp.rise * gHip(x, y); options.push({ kind: 'hip', z, creases: [], maxLen: 1, eave: hp.eave, peak: hp.eave + hp.rise, error: mae(z) }); }
-  const ok = (r) => (r.error <= (r.kind === 'flat' ? MAX_FLAT_ERROR_M : MAX_ERROR_M) ? r : null);
+  const ok = (r) => (!gate || r.error <= (r.kind === 'flat' ? MAX_FLAT_ERROR_M : MAX_ERROR_M) ? r : null);
   if (!options.length && percentile(zs, 0.9) - percentile(zs, 0.1) < MIN_RISE_M) return ok({ ...flat, error: flatErr });
   const plane = fitPlane(pts, x0, y0), lo = percentile(zs, 0.05), hi = Math.min(percentile(zs, 0.95), lo + MAX_PITCH_TAN * 2 * hw);   // a shed's run is the whole width
   if (plane) {                                                       // one slope: kept only if it clearly beats the ridge shapes
@@ -114,4 +130,110 @@ export function fitRoof(rings, height, distance) {
   if (!options.length) return ok({ ...flat, error: flatErr });
   const best = options.reduce((a, b) => (b.error < a.error ? b : a));
   return ok(best.error + 0.15 < flatErr ? best : { ...flat, error: flatErr });      // a pitched roof has to be clearly better than flat
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// Zones: a building no single roof fits (a tall block with a low annex, a main roof with a flat wing) is cut along straight lines in its own
+// axes into zones that each get their own simple roof, with a vertical step between them. The cuts are found like a regression tree: try the cut
+// (across either axis, at any position) that best separates the DSM into two levels; keep it if the two halves fit clearly better than the whole;
+// and carry on into each half while it still fits badly.
+
+export const SPLIT_ERROR_M = 0.8;       // a zone that fits this well is left alone
+export const SPLIT_GAIN = 0.7;          // a cut is kept only if the two halves' error is at most this fraction of the whole's
+export const MIN_ZONE_WIDTH_M = 3;      // zones are at least this wide...
+export const MIN_ZONE_SAMPLES = 10;     // ...and hold at least this many samples
+export const MAX_ZONE_DEPTH = 3;        // cuts of cuts of cuts: at most 8 zones
+
+/** The coordinate of (x, y) along a frame axis: 'a' is the building's dominant direction, 'b' across it. */
+const coordOf = (frame, axis, x, y) => (axis === 'a' ? x * frame.ca + y * frame.sa : -x * frame.sa + y * frame.ca);
+
+/** The best cut of these samples across `axis`: { axis, c, sse } minimising the squared error of two flat levels, or null if none is allowed. */
+function bestCut(pts, frame, bounds) {
+  let best = null;
+  for (const axis of ['a', 'b']) {
+    const lo = axis === 'a' ? bounds.amin : bounds.bmin, hi = axis === 'a' ? bounds.amax : bounds.bmax;
+    const order = pts.map((p) => [coordOf(frame, axis, p[0], p[1]), p[2]]).sort((p, q) => p[0] - q[0]), n = order.length;
+    const sum = [0], sq = [0];
+    for (const [, z] of order) { sum.push(sum.at(-1) + z); sq.push(sq.at(-1) + z * z); }
+    for (let k = MIN_ZONE_SAMPLES; k <= n - MIN_ZONE_SAMPLES; k++) {
+      if (order[k][0] - order[k - 1][0] < 1e-9) continue;
+      const c = (order[k - 1][0] + order[k][0]) / 2;
+      if (c - lo < MIN_ZONE_WIDTH_M || hi - c < MIN_ZONE_WIDTH_M) continue;
+      const sse = (sq[k] - (sum[k] * sum[k]) / k) + (sq[n] - sq[k] - ((sum[n] - sum[k]) ** 2) / (n - k));
+      if (!best || sse < best.sse) best = { axis, c, sse };
+    }
+  }
+  return best;
+}
+
+/**
+ * Refine a cut's position: the samples only say where it is to within their spacing, so look at the DSM itself, 0.1 m at a time, either side, and
+ * put the cut in the middle of where the level changes fastest across it (the average over the zone's samples along the cut).
+ */
+function refineCut(cut, pts, frame, height, reach) {
+  const other = cut.axis === 'a' ? 'b' : 'a', at = (t, o) => (cut.axis === 'a' ? [t * frame.ca - o * frame.sa, t * frame.sa + o * frame.ca] : [o * frame.ca - t * frame.sa, o * frame.sa + t * frame.ca]);
+  const lines = pts.filter((_, i) => i % Math.max(1, Math.floor(pts.length / 40)) === 0).map((p) => coordOf(frame, other, p[0], p[1])), cands = [];
+  for (let t = cut.c - reach; t <= cut.c + reach + 1e-9; t += 0.1) {
+    let g = 0; for (const o of lines) { const [x0, y0] = at(t - 0.25, o), [x1, y1] = at(t + 0.25, o); g += Math.abs(height(x1, y1) - height(x0, y0)); }
+    cands.push([t, g / lines.length]);
+  }
+  const top = Math.max(...cands.map((c) => c[1]));
+  if (top < 1e-6) return cut;
+  const near = cands.filter((c) => c[1] >= 0.97 * top);
+  return { ...cut, c: near.reduce((s, c) => s + c[0], 0) / near.length };
+}
+
+/**
+ * The roof of a whole building as zones. Returns null if there is too little data, or some zone fits no simple roof (the caller then keeps the raw DSM).
+ * Otherwise { zones: [{ model, contains(x, y), id }], lines: [side(x, y)], creases, maxLen, error, zoneAt(x, y) }:
+ *   - `zones`: each with its roof model (as fitRoof) and a test for which zone a point is in;
+ *   - `lines`: the cuts between zones, as signed-distance functions: geometry has a vertex wherever an edge crosses one, and a vertical step
+ *     face goes along each edge on a cut between two zones;
+ *   - `creases`: the cuts plus every zone's own creases (a gable's ridge), all to be split on; `maxLen` as for fitRoof.
+ * A building that fits well as one zone has one zone and no lines (and then it may be a hip).
+ * `groundZ`: a flat zone at or below this height is bare ground (a strip of car park or lawn the outline takes in), flagged `ground`: the caller
+ * builds no roof or outline wall there, which clips the footprint to the real building. If every zone is ground none is flagged (a low shed).
+ */
+export function fitBuildingRoof(rings, height, distance, { groundZ = -Infinity } = {}) {
+  const sampled = sampleFootprint(rings, height, distance);
+  if (!sampled) return null;
+  const { pts, frame } = sampled, spacing = Math.max(1, Math.sqrt(((frame.amax - frame.amin) * (frame.bmax - frame.bmin)) / MAX_SAMPLES));
+  const lines = [];
+  const grow = (zonePts, bounds, constraints, depth) => {
+    const model = fitSamples(zonePts, { ...frame, ...bounds }, distance, { allowHip: depth === 0, gate: false });
+    const leaf = { leaf: true, model, constraints, pts: zonePts };
+    if (!model || depth >= MAX_ZONE_DEPTH || model.error <= SPLIT_ERROR_M || zonePts.length < 2 * MIN_ZONE_SAMPLES) return leaf;
+    const rough = bestCut(zonePts, frame, bounds);
+    if (!rough) return leaf;
+    const cut = refineCut(rough, zonePts, frame, height, spacing);
+    const lowSide = zonePts.filter((p) => coordOf(frame, cut.axis, p[0], p[1]) < cut.c), highSide = zonePts.filter((p) => coordOf(frame, cut.axis, p[0], p[1]) >= cut.c);
+    const loB = { ...bounds, [cut.axis === 'a' ? 'amax' : 'bmax']: cut.c }, hiB = { ...bounds, [cut.axis === 'a' ? 'amin' : 'bmin']: cut.c };
+    const lo = grow(lowSide, loB, [...constraints, { axis: cut.axis, c: cut.c, sign: -1 }], depth + 1), hi = grow(highSide, hiB, [...constraints, { axis: cut.axis, c: cut.c, sign: 1 }], depth + 1);
+    const leaves = (t) => (t.leaf ? [t] : [...leaves(t.lo), ...leaves(t.hi)]);
+    const parts = [...leaves(lo), ...leaves(hi)];
+    if (parts.some((l) => !l.model)) return leaf;
+    const err = parts.reduce((s, l) => s + l.model.error * l.pts.length, 0) / zonePts.length;
+    return err <= SPLIT_GAIN * model.error ? { leaf: false, cut, lo, hi } : leaf;
+  };
+  const root = grow(pts, { amin: frame.amin, amax: frame.amax, bmin: frame.bmin, bmax: frame.bmax }, [], 0);
+  const collect = (t) => (t.leaf ? [t] : [...collect(t.lo), ...collect(t.hi)]);
+  const leaves = collect(root);
+  if (leaves.some((l) => !l.model)) return null;
+  const passes = (m) => m.error <= (m.kind === 'flat' ? MAX_FLAT_ERROR_M : MAX_ERROR_M);
+  if (leaves.some((l) => !passes(l.model))) return null;
+  const cutsOf = (t) => (t.leaf ? [] : [t.cut, ...cutsOf(t.lo), ...cutsOf(t.hi)]);
+  const sides = cutsOf(root).map((c) => (x, y) => coordOf(frame, c.axis, x, y) - c.c);
+  const zones = leaves.map((l, id) => ({
+    id, model: l.model, error: l.model.error,
+    contains: (x, y) => l.constraints.every((c) => (coordOf(frame, c.axis, x, y) - c.c) * c.sign >= 0),
+  }));
+  const isGround = (m) => m.kind === 'flat' && m.z(0, 0) <= groundZ;
+  if (!zones.every((z) => isGround(z.model))) for (const z of zones) z.ground = isGround(z.model);
+  const total = leaves.reduce((s, l) => s + l.pts.length, 0), error = leaves.reduce((s, l) => s + l.model.error * l.pts.length, 0) / total;
+  return {
+    zones, lines: sides, error,
+    creases: [...sides, ...zones.flatMap((z) => z.model.creases)],
+    maxLen: Math.min(...zones.map((z) => z.model.maxLen)),
+    zoneAt: (x, y) => zones.find((z) => z.contains(x, y)) ?? zones[0],
+  };
 }
