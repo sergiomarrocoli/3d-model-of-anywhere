@@ -6,7 +6,7 @@ import urllib.request
 import pytest
 
 import service as svc
-from service import BuildError, BuildService, area_id, normalise_box, snap, valid_id
+from service import BuildError, BuildService, area_id, cars_setting, normalise_box, snap, valid_id
 
 V = 3
 
@@ -158,3 +158,37 @@ class TestRunner:
         (pkg / "build_area.py").write_text("import sys; sys.exit(3)\n")
         with pytest.raises(RuntimeError, match="failed"):
             svc.subprocess_runner(tmp_path, python="python3")((1, 2, 3, 4), "e1n2w2h2", tmp_path, lambda l: None)
+
+
+class TestCarsSetting:
+    def test_on_by_default_when_the_detector_is_installed(self):
+        assert cars_setting(None, True) == (True, "removed")
+        assert cars_setting("1", True) == (True, "removed")
+
+    def test_off_when_asked(self):
+        for word in ("0", "false", "No", "OFF"):
+            assert cars_setting(word, True)[0] is False
+
+    def test_quietly_off_by_default_without_the_detector_but_loud_when_asked_for(self):
+        on, note = cars_setting(None, False)
+        assert on is False and "requirements-cars.txt" in note
+        with pytest.raises(RuntimeError, match="requirements-cars.txt"):
+            cars_setting("1", False)
+        assert cars_setting("0", False)[0] is False
+
+    def test_the_runner_adds_the_flag(self, tmp_path):
+        seen = []
+        class Fake:
+            def __init__(self, cmd, **kw):
+                seen.append(cmd)
+                self.stdout = iter([])
+            def wait(self): return 0
+            def kill(self): pass
+        orig = svc.subprocess.Popen
+        svc.subprocess.Popen = Fake
+        try:
+            svc.subprocess_runner(tmp_path, remove_cars=True)((1, 2, 3, 4), "e1n2w2h2", tmp_path, lambda l: None)
+            svc.subprocess_runner(tmp_path)((1, 2, 3, 4), "e1n2w2h2", tmp_path, lambda l: None)
+        finally:
+            svc.subprocess.Popen = orig
+        assert "--remove-cars" in seen[0] and "--remove-cars" not in seen[1]
