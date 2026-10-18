@@ -48,7 +48,7 @@ async function playGame({ area, overlay = null, game = 'walker', room = null }) 
     camera = racer.camera; setAspect = racer.setAspect;
     const net = room ? attachRace(room, racer) : null;
     if (net) showInvite($('players'), params.get('room'), area);
-    step = (dt) => { racer.update(dt); net?.tick(dt); };
+    step = (dt) => { racer.update(dt); map.update(dt); net?.tick(dt); };                          // map.update: collapsing buildings, dust and debris
   } else {
     walker = startWalker({ map, scene, canvas });
     presence = startPresence({ scene, localMesh: walker.player, groundY: map.groundY, overlay: $('players'), area, params });

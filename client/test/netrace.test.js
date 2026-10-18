@@ -17,7 +17,7 @@ const fakeRacer = () => {
     field, isHost: true, canSend: true, snapshot: () => ({ x: 1.234, z: -5.678, h: 0.12345, vx: 3, vz: 4, s: 0.01, d: 0.456 }),
     setColour: (c) => calls.push(['colour', c]), setHost(v) { racer.isHost = v; calls.push(['host', v]); },
     addRemote: (id, o) => { calls.push(['add', id, o.name]); if (!field.some((f) => f.id === id)) field.push({ id }); }, removeRemote: (id) => calls.push(['remove', id]),
-    setRemote: (id, s) => calls.push(['set', id, s.x]), applyBoom: (id) => calls.push(['boom', id]), set onBoom(fn) { racer.boom = fn; }, applyEvent: (k, d) => calls.push(['event', k, d]), hostRestart: () => calls.push(['restart']),
+    setRemote: (id, s) => calls.push(['set', id, s.x]), applyBoom: (id) => calls.push(['boom', id]), applyBuildingHit: (b, a) => calls.push(['bld', b, a]), set onBoom(fn) { racer.boom = fn; }, applyEvent: (k, d) => calls.push(['event', k, d]), hostRestart: () => calls.push(['restart']),
   };
   return { racer, calls };
 };
@@ -82,6 +82,11 @@ describe('attachRace', () => {
     const { room, sent, say } = fakeRoom({ host: '1' }); const { racer, calls } = fakeRacer(); attachRace(room, racer); sent.length = 0; calls.length = 0;
     racer.boom(); expect(sent).toEqual([{ t: 'boom' }]);
     say({ t: 'boom', id: '9' }); expect(calls).toEqual([['boom', '9']]);
+  });
+  it('sends our building hits, and applies the others\'', () => {
+    const { room, sent, say } = fakeRoom({ host: '1' }); const { racer, calls } = fakeRacer(); attachRace(room, racer); sent.length = 0; calls.length = 0;
+    racer.onBuildingHit({ id: 12, amount: 33.333 }); expect(sent).toEqual([{ t: 'bld', b: 12, a: 33.3 }]);
+    say({ t: 'bld', id: '9', b: 4, a: 70 }); expect(calls).toEqual([['bld', 4, 70]]);
   });
   it('shows other cars, adding one it has not heard of', () => {
     const { room, say } = fakeRoom({ host: '1' }); const { racer, calls } = fakeRacer(); attachRace(room, racer);

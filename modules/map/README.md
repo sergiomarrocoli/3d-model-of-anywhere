@@ -23,6 +23,7 @@ scene.add(map.object);                                              // terrain, 
 | `limitSlope(x0, z0, x1, z1)` | the allowed part of a move: only near-vertical ground blocks |
 | `slopeSpeedFactor(x0, z0, dx, dz)` | 1 on the level or downhill, down to 0.15 uphill |
 | `clamp(x, z)` | keep a point inside the map |
+| `damageBuilding`, `damageBuildingAt`, `blast`, `buildingAt`, `rubbleAt`, `restoreBuildings`, `onBuilding`, `update(dt)` | knock buildings down: see Destroyable buildings |
 
 Coordinates are world coordinates: X east, Y up (from the lowest ground in the area), Z = -north.
 
@@ -55,6 +56,26 @@ Each zone gets its own flat, shed or gable roof, and:
   the LiDAR clearly shows no roof (a building the LiDAR sees nothing of at all is not clipped away);
 - if any zone still fits no simple roof the whole building keeps the raw DSM roof (about 7 percent of Newtown, 17 percent of Bath, mostly very
   complex buildings such as the Abbey).
+
+## Destroyable buildings
+
+Every building has health from its size (`buildingHealth`: 30 plus 4 times the square root of footprint area times height: a shed about 50, a house 100, a block 400), and a game hurts it:
+
+```js
+map.damageBuilding(id, amount)                 // by id (the building's place in the bundle's feature list, as `map.buildingAt` gives it)
+map.damageBuildingAt(x, z, amount, reach)      // the building at a point, or the nearest within `reach` metres
+map.blast(x, z, radius, amount)                // an explosion: each building within `radius` of the blast takes `amount` at its wall, less with distance to nothing
+map.onBuilding((e) => ...)                     // e: { type: 'damage' | 'collapse' | 'rubble' | 'restore', id, hp, x, z }
+map.update(dt)                                 // call every frame: collapses, debris, dust and smoke
+map.restoreBuildings()                         // everything back as it was (a new round)
+```
+
+- **Damage shows.** The walls go darker and sooty, with cracks and then holes (a `wallDamage` vertex attribute, drawn in the wall shader), the roof darkens (vertex colours), and a building at half health or worse smokes.
+- **Collapse.** At no health the building's triangles come out of the two merged building meshes (`buildBuildingGeometry` records which are whose, `ranges`) into a separate piece that shudders,
+  then sinks to a heap in a cloud of pixel dust and flying debris (`COLLAPSE_S`, 1.8 s), and leaves a pile of rubble boxes on an ash-dark patch that covers the roof still showing in the aerial photo.
+- **Collision.** The building leaves the collision grid at the moment it starts to go: people and cars pass through it. The rubble slows them (`RUBBLE_SLOWDOWN`, folded into `slopeSpeedFactor`); `map.rubbleAt(x, z)` says where it is.
+- **Built from** `collision.js` (ids, `removeBuilding`, `restoreBuildings`, `buildingsNear`, `insideRubble`) and `destruction.js` (`createDestruction`, which `createMap` calls); the unit tests are `test/destruction.test.js`.
+  The mortars, crashes and explosions that call it belong to the games; the racer's are in its README.
 
 ### Facades (walls)
 
