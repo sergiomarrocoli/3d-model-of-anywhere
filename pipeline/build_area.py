@@ -14,7 +14,9 @@ import geopandas as gpd
 import numpy as np
 import rasterio
 
-from pipeline import bundle, buildings, clean, dtm, heights, base, imagery, omlocal, terrain_fill, wales_lidar
+import json
+
+from pipeline import bundle, buildings, cars, clean, dtm, heights, base, imagery, omlocal, terrain_fill, wales_lidar
 
 NRW_ATTRIBUTION = "Contains Natural Resources Wales information © Natural Resources Wales and database right (OGL v3)"
 
@@ -29,7 +31,7 @@ def _log(msg):
 
 
 def build_area(bbox, area_id, out_dir="data/bundles", dtm_files=None, dtm_attribution=NRW_ATTRIBUTION,
-               buildings_source="auto", work_root="data/work"):
+               buildings_source="auto", work_root="data/work", remove_cars=False):
     bbox = tuple(float(v) for v in bbox)
     w = Path(work_root) / str(area_id)
     w.mkdir(parents=True, exist_ok=True)
@@ -88,9 +90,16 @@ def build_area(bbox, area_id, out_dir="data/bundles", dtm_files=None, dtm_attrib
     img = imagery.fetch_imagery(bbox, w / "imagery.tif", source=src)
     credits.append(src.attribution)
     _log("Imagery fetched")
+    if remove_cars:
+        summary["cars_removed"] = cars.remove_cars(img, b)
+        _log(f"Cars removed: {summary['cars_removed']}")
 
     # 4. Bundle
     root = bundle.write_bundle(out_dir, area_id, w / "dtm.tif", img, b, credits, dsm_path)
+    if remove_cars:   # say so in the bundle, so a reader can tell a cleaned build from a plain one
+        meta = json.loads((root / "meta.json").read_text())
+        meta["cars_removed"] = summary["cars_removed"]
+        (root / "meta.json").write_text(json.dumps(meta, indent=2) + "\n")
     summary["bundle"] = str(root)
     _log(f"Wrote {root}")
     return summary
@@ -107,6 +116,7 @@ def main(argv=None):
     ap.add_argument("--dtm-file", nargs="+", help="GeoTIFF DTM tiles (EPSG:27700) to use instead of EA LiDAR, e.g. NRW tiles")
     ap.add_argument("--dtm-attribution", default=NRW_ATTRIBUTION, help="credit line for --dtm-file")
     ap.add_argument("--buildings", choices=["auto", "osm", "omlocal"], default="auto", dest="buildings_source")
+    ap.add_argument("--remove-cars", action="store_true", help="paint parked cars out of the imagery (needs pipeline/requirements-cars.txt)")
     a = ap.parse_args(argv)
     if a.centre:
         e, n = a.centre
@@ -116,7 +126,7 @@ def main(argv=None):
         bbox = a.bbox
     if not (bbox[0] < bbox[2] and bbox[1] < bbox[3]):
         sys.exit("bbox must be MINE MINN MAXE MAXN with min < max")
-    result = build_area(bbox, a.id, a.out, a.dtm_file, a.dtm_attribution, a.buildings_source)
+    result = build_area(bbox, a.id, a.out, a.dtm_file, a.dtm_attribution, a.buildings_source, remove_cars=a.remove_cars)
     print(result)
 
 

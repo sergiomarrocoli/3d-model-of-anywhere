@@ -29,7 +29,7 @@ KEEP_LOG_LINES = 60
 
 # Rough progress from the pipeline's own log lines: (text it prints, percent, stage name).
 STAGES = [("DTM:", 20, "terrain"), ("Filled", 30, "terrain"), ("Buildings:", 45, "buildings"), ("Buildings after cleanup", 60, "buildings"),
-          ("Imagery fetched", 90, "imagery"), ("Wrote", 100, "done")]
+          ("Imagery fetched", 90, "imagery"), ("Cars removed", 95, "cars"), ("Wrote", 100, "done")]
 
 
 class BuildError(ValueError):
@@ -86,10 +86,12 @@ class Job:
         return d
 
 
-def subprocess_runner(root, python=sys.executable, timeout=BUILD_TIMEOUT_S):
+def subprocess_runner(root, python=sys.executable, timeout=BUILD_TIMEOUT_S, remove_cars=False):
     """Run the real pipeline. `on_line` gets each log line as it appears; raises if the build fails or times out."""
     def run(box, id, out_dir, on_line):
         cmd = [python, "-m", "pipeline.build_area", "--bbox", *[str(v) for v in box], "--id", id, "--out", str(out_dir)]
+        if remove_cars:
+            cmd.append("--remove-cars")
         proc = subprocess.Popen(cmd, cwd=str(root), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
         timer = threading.Timer(timeout, proc.kill)
         timer.start()
