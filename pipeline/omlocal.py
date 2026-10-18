@@ -12,6 +12,7 @@ import geopandas as gpd
 import requests
 from shapely.geometry import box
 
+from pipeline.progress import download
 from pipeline.terrain_fill import tile_name
 
 CACHE = Path("data/cache/omlocal")
@@ -27,17 +28,7 @@ def squares_for_bbox(bbox):
 
 
 def ensure_zip(square, cache=CACHE):
-    path = Path(cache) / f"opmplc_essh_{square.lower()}.zip"
-    if not path.exists():
-        path.parent.mkdir(parents=True, exist_ok=True)
-        part = path.with_suffix(".part")
-        with requests.get(URL.format(sq=square), stream=True, timeout=120) as r:
-            r.raise_for_status()
-            with open(part, "wb") as f:
-                for chunk in r.iter_content(1 << 20):
-                    f.write(chunk)
-        part.rename(path)
-    return path
+    return download(URL.format(sq=square), Path(cache) / f"opmplc_essh_{square.lower()}.zip", f"OS Open Map Local, grid square {square}")
 
 
 def fetch_omlocal_buildings(bbox, out=None, cache=CACHE):

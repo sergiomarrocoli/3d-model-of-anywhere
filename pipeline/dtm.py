@@ -11,6 +11,8 @@ import rasterio
 import rasterio.enums
 import requests
 
+from pipeline.progress import say
+
 WCS_URL = "https://environment.data.gov.uk/spatialdata/lidar-composite-digital-terrain-model-dtm-1m-2022/wcs"
 COVERAGE_ID = "13787b9a-26a4-4775-8523-806d13af58fc__Lidar_Composite_Elevation_DTM_1m"
 DSM_WCS_URL = "https://environment.data.gov.uk/geoservices/datasets/df4e3ec3-315e-48aa-aaaf-b5ae74d7b2bb/wcs"
@@ -39,6 +41,7 @@ def _fetch_wcs(wcs_url, coverage_id, bbox, out):
     }
     # WCS 2.0 needs repeated `subset` params, which a dict can't express.
     query = list(params.items()) + [("subset", f"E({min_e},{max_e})"), ("subset", f"N({min_n},{max_n})")]
+    say(f"Asking the Environment Agency for LiDAR ({coverage_id})")
     resp = requests.get(wcs_url, params=query, timeout=120)
     resp.raise_for_status()
     if "tiff" not in resp.headers.get("content-type", ""):

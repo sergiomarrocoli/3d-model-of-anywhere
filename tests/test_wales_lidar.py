@@ -66,7 +66,7 @@ def test_downloads_caches_mosaics_and_clips(monkeypatch, tmp_path):
     _catalogue(monkeypatch, [_feature("SO1091", 310000, 291000), _feature("SO1191", 311000, 291000)])
     downloads = []
 
-    def fake_download(url, dest):
+    def fake_download(url, dest, what=None):
         downloads.append(url)
         dest.parent.mkdir(parents=True, exist_ok=True)
         e0 = 310000 if "SO1091" in url else 311000

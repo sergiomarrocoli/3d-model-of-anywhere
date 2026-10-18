@@ -13,6 +13,7 @@ from pathlib import Path
 import requests
 
 from pipeline.dtm import dtm_from_files
+from pipeline.progress import download, say
 
 WFS_URL = "https://datamap.gov.wales/geoserver/ows"
 LAYER = "geonode:welsh_government_lidar_tile_catalogue_2020_2023"
@@ -50,19 +51,8 @@ def catalogue_tiles(bbox):
     return [best[g] for g in sorted(best)]
 
 
-def _download(url, dest):
-    dest = Path(dest)
-    if dest.exists():
-        return dest
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    part = dest.with_suffix(".part")
-    with requests.get(url if url.startswith("http") else f"https://{url}", stream=True, timeout=120) as r:
-        r.raise_for_status()
-        with open(part, "wb") as f:
-            for chunk in r.iter_content(1 << 20):
-                f.write(chunk)
-    part.rename(dest)
-    return dest
+def _download(url, dest, what=None):
+    return download(url, dest, what)
 
 
 def fetch_wales_lidar(bbox, out, kind="dtm", cache=CACHE):
@@ -72,7 +62,12 @@ def fetch_wales_lidar(bbox, out, kind="dtm", cache=CACHE):
     tiles = [t for t in catalogue_tiles(bbox) if t.get(f"{kind}_link")]
     if not tiles:
         return None
-    paths = [_download(t[f"{kind}_link"], Path(cache) / kind / Path(t[f"{kind}_link"]).name) for t in tiles]
+    say(f"Welsh LiDAR: {len(tiles)} tile{'s cover' if len(tiles) != 1 else ' covers'} this area ({kind.upper()})")
+    paths = []
+    for i, t in enumerate(tiles, 1):
+        name = Path(t[f"{kind}_link"]).name
+        say(f"LiDAR tile {i} of {len(tiles)} ({kind.upper()}): {name}")
+        paths.append(_download(t[f"{kind}_link"], Path(cache) / kind / name, name))
     return dtm_from_files(paths, bbox, out)
 
 

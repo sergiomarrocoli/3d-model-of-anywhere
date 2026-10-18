@@ -8,6 +8,7 @@ Usage: python3 -m pipeline.imagery --bbox 375000 164500 375500 165000 --out data
 import argparse
 import io
 import math
+import threading
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -19,6 +20,8 @@ from PIL import Image
 from pyproj import Transformer
 from rasterio.transform import from_bounds
 from rasterio.warp import Resampling, reproject
+
+from pipeline.progress import Every, say
 
 CRS = "EPSG:27700"
 WEBMERC_HALF = 20037508.342789244
@@ -53,8 +56,19 @@ class XYZTileSource(ImagerySource):
         y0, y1 = tile_y(max(ys)), tile_y(min(ys))
         coords = [(x, y) for y in range(y0, y1 + 1) for x in range(x0, x1 + 1)]
 
+        say(f"Fetching {len(coords)} imagery tiles")
+        done, lock, every = [0], threading.Lock(), Every(2.0)
+
+        def counted(xy):
+            tile = self._get(xy)
+            with lock:
+                done[0] += 1
+                if every() or done[0] == len(coords):
+                    say(f"Imagery tiles: {done[0]} of {len(coords)}")
+            return tile
+
         with ThreadPoolExecutor(max_workers=8) as pool:
-            tiles = dict(zip(coords, pool.map(self._get, coords)))
+            tiles = dict(zip(coords, pool.map(counted, coords)))
 
         mosaic = np.zeros(((y1 - y0 + 1) * TILE, (x1 - x0 + 1) * TILE, 3), dtype=np.uint8)
         for (x, y), img in tiles.items():
