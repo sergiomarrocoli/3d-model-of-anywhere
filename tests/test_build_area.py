@@ -125,3 +125,55 @@ def test_uses_welsh_lidar_with_dsm_when_ea_has_no_coverage(stubbed, monkeypatch)
     meta, z, _, fc = load_bundle(s["bundle"])
     assert fc["features"][0]["properties"]["height"] == pytest.approx(9.0) and np.allclose(z, 100)
     assert any("Welsh Government" in c for c in meta["attribution"])
+
+
+@pytest.fixture
+def lidar_town(stubbed, monkeypatch):
+    """A Welsh-LiDAR area with two mapped buildings (OSM), one that only Open Map Local has (the LiDAR sees it) and one it also has that the LiDAR does not see."""
+    from shapely.geometry import box
+    tmp, _ = stubbed
+    ground = np.full((100, 100), 100.0, dtype="float32")
+    roof = ground.copy()
+    for a, b in ((10, 25), (40, 55), (70, 85)):
+        roof[100 - b:100 - a, a:b] += 9.0           # raster row 0 is the north edge, so this is local y a..b
+    monkeypatch.setattr(ba.wales_lidar, "fetch_wales_lidar", lambda bbox, out, kind="dtm", cache=None:
+                        _tif(out, ground if kind == "dtm" else roof, nodata=-9999.0, e0=bbox[0], n0=bbox[1]))
+    sq = lambda a, b: box(BBOX[0] + a, BBOX[1] + a, BBOX[0] + b, BBOX[1] + b)
+    osm = gpd.GeoDataFrame({"building": ["yes", "yes"], "osm_id": ["way/1", "way/2"]}, geometry=[sq(10, 25), sq(40, 55)], crs="EPSG:27700")
+    oml = gpd.GeoDataFrame({"building": ["yes"] * 3, "osm_id": ["oml/0", "oml/1", "oml/2"]},
+                           geometry=[sq(10, 25), sq(70, 85), box(BBOX[0] + 2, BBOX[1] + 90, BBOX[0] + 12, BBOX[1] + 98)], crs="EPSG:27700")
+    monkeypatch.setattr(ba.buildings, "fetch_buildings", lambda bbox, out: (osm.to_file(out, driver="GeoJSON"), out)[1])
+    monkeypatch.setattr(ba.omlocal, "fetch_omlocal_buildings", lambda bbox, out=None, cache=None: oml)
+    monkeypatch.setattr(ba.omlocal, "fetch_omlocal_roads", lambda bbox, cache=None: gpd.GeoDataFrame({"geometry": []}, geometry="geometry", crs="EPSG:27700"))
+    return tmp
+
+
+def test_fill_footprints_adds_open_map_local_buildings_the_lidar_confirms(lidar_town):
+    s = ba.build_area(BBOX, "f", lidar_town / "b", work_root=lidar_town / "w", fill_footprints=True)
+    _, _, _, fc = load_bundle(s["bundle"])
+    assert s["buildings"] == 3 and s["footprints_from_omlocal"] == 1          # oml/0 is OSM's way/1 again, oml/2 has no LiDAR behind it
+    assert sorted(f["properties"]["osm_id"] for f in fc["features"]) == ["oml/1", "way/1", "way/2"]
+    plain = ba.build_area(BBOX, "p", lidar_town / "b", work_root=lidar_town / "w")
+    assert plain["buildings"] == 2 and "footprints_from_omlocal" not in plain          # off by default
+
+
+def test_register_warps_the_photo_and_tells_the_viewer(lidar_town, monkeypatch):
+    monkeypatch.setattr(ba.register, "fit_registration", lambda *a, **k: {"ground": [0.5, 1.0], "lean": [0.3, 0.0], "buildings_used": 2, "ground_from": "roads"})
+    s = ba.build_area(BBOX, "r", lidar_town / "b", work_root=lidar_town / "w", register_imagery=True)
+    meta, _, _, _ = load_bundle(s["bundle"])
+    assert (lidar_town / "w" / "r" / "imagery_registered.tif").exists() and s["registration"]["lean"] == [0.3, 0.0]
+    assert meta["imagery_registration"]["ground"] == [0.5, 1.0] and meta["imagery_lean"] == {"ground": [0, 0], "perMetre": [0, 0]}      # so roofs are not shifted twice
+
+
+def test_register_with_nothing_to_measure_leaves_the_bundle_alone(lidar_town):
+    s = ba.build_area(BBOX, "n", lidar_town / "b", work_root=lidar_town / "w", register_imagery=True)      # two buildings: too few to fit a lean
+    meta, _, _, _ = load_bundle(s["bundle"])
+    assert s["registration"]["lean"] == [0.0, 0.0] and "imagery_lean" not in meta
+
+
+def test_flags_that_cannot_act_say_so_and_change_nothing(stubbed, monkeypatch, capsys):
+    tmp, _ = stubbed
+    monkeypatch.setattr(ba.omlocal, "fetch_omlocal_buildings", lambda bbox, out=None, cache=None: gpd.GeoDataFrame({"osm_id": []}, geometry=[], crs="EPSG:27700"))
+    s = ba.build_area(BBOX, "x", tmp / "b", work_root=tmp / "w", fill_footprints=True, register_imagery=True)      # no LiDAR surface, no buildings
+    out = capsys.readouterr().out
+    assert "not registered" in out and "registration" not in s and s["buildings"] == 0
