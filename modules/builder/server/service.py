@@ -6,8 +6,8 @@ Pure logic with no HTTP in it (see serve.py for that), so it can be tested with 
   - The build id comes from that rounded box, so the same area is always the same bundle: if a bundle with the current
     PIPELINE_VERSION already exists it is returned at once and nothing is fetched. (Overpass also has a disk cache in the
     pipeline, so even a forced rebuild does not hit the public servers twice in a week.)
-  - Builds run as `python3 -m pipeline.build_area` subprocesses, one at a time, in a queue. Limits: box edge 200 m to
-    2 km, inside the OS grid, a few waiting builds overall and per client, 10 minute timeout per build.
+  - Builds run as `python3 -m pipeline.build_area` subprocesses, one at a time, in a queue. Limits: each box edge 200 m to
+    4 km and the area at most 4 km2 (any shape), inside the OS grid, a few waiting builds overall and per client, 10 minute timeout per build.
 """
 import json
 import queue
@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 
 SNAP_M = 25
-MIN_SIZE_M, MAX_SIZE_M = 200, 2000
+MIN_SIZE_M, MAX_EDGE_M, MAX_AREA_M2 = 200, 4000, 4_000_000   # the area is the imagery and terrain budget; the edge keeps the imagery texture under the GPU's 16384 px limit
 GB_EXTENT = (0, 0, 700000, 1300000)
 MAX_QUEUED = 8
 MAX_PER_CLIENT = 2
@@ -52,8 +52,10 @@ def normalise_box(bbox):
     if not (min_e < max_e and min_n < max_n):
         raise BuildError("bbox must have min smaller than max")
     w, h = snap(max_e - min_e), snap(max_n - min_n)
-    if not (MIN_SIZE_M <= w <= MAX_SIZE_M and MIN_SIZE_M <= h <= MAX_SIZE_M):
-        raise BuildError(f"each side must be between {MIN_SIZE_M} m and {MAX_SIZE_M} m")
+    if not (MIN_SIZE_M <= w <= MAX_EDGE_M and MIN_SIZE_M <= h <= MAX_EDGE_M):
+        raise BuildError(f"each side must be between {MIN_SIZE_M} m and {MAX_EDGE_M} m")
+    if w * h > MAX_AREA_M2:
+        raise BuildError(f"the area must be at most {MAX_AREA_M2 // 1_000_000} km² in any shape (for example {2000} × {2000} m or {4000} × {1000} m): this one is {w * h / 1e6:.1f} km²")
     e0, n0 = snap(min_e), snap(min_n)
     box = (e0, n0, e0 + w, n0 + h)
     if box[0] < GB_EXTENT[0] or box[1] < GB_EXTENT[1] or box[2] > GB_EXTENT[2] or box[3] > GB_EXTENT[3]:

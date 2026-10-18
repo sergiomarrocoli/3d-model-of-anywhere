@@ -40,7 +40,7 @@ $ curl localhost:8788/api/builds/e310700n291125w500h500
   days), so even a forced rebuild stays off the public servers. LiDAR tiles and the other sources were already cached.
 - **One build at a time**, in a queue (a build is about 30 s to a minute), run as a `python3 -m pipeline.build_area`
   subprocess given four integers and an id made from them: no user text reaches a shell. 10 minute timeout.
-- **Limits:** each side 200 m to 2 km, inside the OS grid, at most 8 builds waiting, 2 per client (the client is the
+- **Limits:** each side 200 m to 4 km and the area at most 4 km² in any shape (2 × 2 km, 4 × 1 km...: the same imagery and terrain budget as a 2 km square, and the longest side keeps the imagery texture under the GPU's 16384 px limit), inside the OS grid, at most 8 builds waiting, 2 per client (the client is the
   address, or `X-Forwarded-For` when it comes from a local proxy). Asking for an area that is already building shares that
   job. A failed area is not retried for 30 s.
 

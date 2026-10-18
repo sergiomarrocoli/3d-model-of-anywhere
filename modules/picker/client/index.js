@@ -7,10 +7,10 @@ import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'; // MapLibre
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './picker.css';
 import { fromBNG, insideGB, toBNG } from './bng.js';
-import { HANDLES, boxBBox, boxCentre, boxCorners, boxSize, buildCommand, DEFAULT_SIZE_M, handleCursor, handlePosition, makeBox, MAX_SIZE_M, MIN_SIZE_M, moveBox, recentreBox, resizeBox } from './box.js';
+import { HANDLES, boxBBox, boxCentre, boxCorners, boxSize, buildCommand, DEFAULT_SIZE_M, handleCursor, handlePosition, makeBox, MAX_AREA_M2, MAX_EDGE_M, MAX_SIZE_M, MIN_SIZE_M, moveBox, recentreBox, resizeBox } from './box.js';
 import { geocode } from './geocode.js';
 
-export { DEFAULT_SIZE_M, MAX_SIZE_M, MIN_SIZE_M } from './box.js';
+export { DEFAULT_SIZE_M, MAX_AREA_M2, MAX_EDGE_M, MAX_SIZE_M, MIN_SIZE_M } from './box.js';
 
 setWorkerUrl(workerUrl);
 
@@ -129,7 +129,7 @@ export function mountPickerPage(root, { onBuild = null, initial = null } = {}) {
       <div class="row"><button data-build>Build this area</button></div>
       <div class="hint" data-buildmsg></div>
       <details><summary class="hint">Build it from the command line</summary><code data-cmd></code><button class="secondary" data-copy style="margin-top:6px">Copy</button></details>
-      <div class="hint">Drag the box to move it, click the map to put it there, drag its handles to resize it (${MIN_SIZE_M / 1000} to ${MAX_SIZE_M / 1000} km a side). The box follows the Ordnance Survey grid, which is why it can look slightly turned against the map.</div>
+      <div class="hint">Drag the box to move it, click the map to put it there, drag its handles to resize it: any shape up to ${MAX_AREA_M2 / 1e6} km² (so ${MAX_SIZE_M / 1000} × ${MAX_SIZE_M / 1000} km or ${MAX_EDGE_M / 1000} × ${MAX_AREA_M2 / MAX_EDGE_M / 1000} km), each side ${MIN_SIZE_M / 1000} to ${MAX_EDGE_M / 1000} km. The box follows the Ordnance Survey grid, which is why it can look slightly turned against the map.</div>
     </div>`;
   const $ = (s) => root.querySelector(s);
   let saved = initial;

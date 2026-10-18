@@ -47,7 +47,7 @@ class TestBox:
         assert area_id(normalise_box([310451, 290881, 311452, 291879])) == area_id(normalise_box([310449, 290879, 311448, 291881]))
 
     @pytest.mark.parametrize("bad", [None, "x", [1, 2, 3], [1, 2, 3, "a"], [0, 0, 100, 100], [0, 0, 100000, 100000], [5, 5, 5, 500],
-                                     [float("nan"), 0, 500, 500], [-500, 1000, 500, 2000], [690000, 1000, 702000, 2000], [1e12, 0, 1e12 + 500, 500], [10, 10, 5, 5]])
+                                     [float("nan"), 0, 500, 500], [1000, 1000, 4000, 3000], [1000, 1000, 5100, 2000], [1000, 1000, 3100, 3000], [-500, 1000, 500, 2000], [690000, 1000, 702000, 2000], [1e12, 0, 1e12 + 500, 500], [10, 10, 5, 5]])
     def test_refuses_bad_boxes(self, bad):
         with pytest.raises(BuildError):
             normalise_box(bad)
@@ -56,6 +56,16 @@ class TestBox:
         assert normalise_box([1000, 1000, 3000, 3000]) == (1000, 1000, 3000, 3000)
         assert normalise_box([1000, 1000, 1200, 1200]) == (1000, 1000, 1200, 1200)
         assert normalise_box([1000, 1000, 2500, 2000]) == (1000, 1000, 2500, 2000)
+
+    def test_any_shape_up_to_four_square_km(self):
+        assert normalise_box([1000, 1000, 3000, 3000]) == (1000, 1000, 3000, 3000)         # 2 x 2 km
+        assert normalise_box([1000, 1000, 5000, 2000]) == (1000, 1000, 5000, 2000)         # 4 x 1 km: the longest side
+        assert normalise_box([1000, 1000, 2000, 5000]) == (1000, 1000, 2000, 5000)         # and the other way round
+        assert normalise_box([1000, 1000, 4000, 2325]) == (1000, 1000, 4000, 2325)         # 3 x 1.325 km = 3.975 km2
+        with pytest.raises(BuildError, match="at most 4 km"):
+            normalise_box([1000, 1000, 4000, 2350])                                        # 3 x 1.35 km = 4.05 km2: a hair too much
+        with pytest.raises(BuildError, match="between 200 m and 4000 m"):
+            normalise_box([1000, 1000, 5300, 1500])                                        # a strip longer than 4 km, though the area is fine
 
     def test_valid_id(self):
         assert valid_id("e310450n290875w1000h1000") and not valid_id("../etc") and not valid_id("bath") and not valid_id("e1n2w3h4/..")

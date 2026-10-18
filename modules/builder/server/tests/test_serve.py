@@ -65,7 +65,9 @@ def test_bad_bodies_are_400(api, raw):
 
 def test_bad_boxes_are_400_with_a_reason(api):
     code, body = api("POST", "/api/builds", {"bbox": [0, 0, 50000, 50000]})
-    assert code == 400 and "between 200 m and 2000 m" in body["error"]
+    assert code == 400 and "between 200 m and 4000 m" in body["error"]
+    code, body = api("POST", "/api/builds", {"bbox": [1000, 1000, 4000, 3000]})            # 3 x 2 km: each side fine, too much area
+    assert code == 400 and "at most 4 km²" in body["error"] and "6.0 km²" in body["error"]
     code, body = api("POST", "/api/builds", {"bbox": [-5000, 0, -4000, 1000]})
     assert code == 400 and "outside Great Britain" in body["error"]
 
