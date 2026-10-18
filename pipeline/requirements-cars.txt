@@ -1,0 +1,2 @@
+# Optional: the car-removal step (build_area --remove-cars). Pulls in PyTorch through ultralytics, so it is a separate file.
+aerial-car-detector @ git+https://github.com/sergiomarrocoli/aerial-car-detector.git@v0.2.0

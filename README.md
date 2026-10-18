@@ -17,7 +17,7 @@ a Cannon Fodder style walker, multiplayer) live in `civil-war`, which installs t
   answers ground-height, collision and destruction questions), `credits` (the source and licence lines) and `flow` (the step
   runner). See [modules/README.md](modules/README.md).
 - `src/main.js`: the viewer, which picks, builds and flies round an area.
-- Cars are painted out of the imagery by [aerial-car-detector](https://github.com/sergiomarrocoli/aerial-car-detector).
+- Cars are painted out of the imagery, optionally, by [aerial-car-detector](https://github.com/sergiomarrocoli/aerial-car-detector) (a fine-tuned YOLO11n, 5.7 MB): `pipeline/cars.py`. See "Remove cars" below.
 
 ## Run it
 
@@ -29,6 +29,19 @@ npm run dev                             # http://localhost:5173/?area=<id>; ?pic
 python3 modules/builder/server/serve.py # the build service the picker uses
 npm test && python3 -m pytest           # JavaScript and Python tests
 ```
+
+## Remove cars
+
+Parked cars photographed from above end up flat on the road, so the pipeline can paint them out of the imagery:
+
+```
+.venv/bin/pip install -U pip && .venv/bin/pip install -r pipeline/requirements-cars.txt   # PyTorch comes with it; needs pip 22 or newer
+.venv/bin/python -m pipeline.build_area --bbox 310725 291125 311025 291425 --id newtown-clean --remove-cars
+REMOVE_CARS=1 .venv/bin/python modules/builder/server/serve.py                           # the build service, for every build
+```
+
+A 300 m box takes about 20 s longer and found 212 cars in Newtown. The count is recorded in the bundle's `meta.json` as
+`cars_removed`. Without `--remove-cars` nothing changes and PyTorch is not needed.
 
 Design notes and data sources are in [PLAN.md](PLAN.md).
 

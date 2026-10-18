@@ -82,10 +82,12 @@ def make_server(service, host="127.0.0.1", port=8788):
 if __name__ == "__main__":
     sys.path.insert(0, str(ROOT))
     from pipeline import PIPELINE_VERSION
-    svc = BuildService(ROOT / "data" / "bundles", subprocess_runner(ROOT), PIPELINE_VERSION)
+    remove_cars = os.environ.get("REMOVE_CARS", "").lower() in ("1", "true", "yes")   # needs pipeline/requirements-cars.txt in this Python
+    svc = BuildService(ROOT / "data" / "bundles", subprocess_runner(ROOT, remove_cars=remove_cars), PIPELINE_VERSION)
+    cars_note = "removed" if remove_cars else "kept"
     host, port = os.environ.get("HOST", "127.0.0.1"), int(os.environ.get("PORT", "8788"))
     httpd = make_server(svc, host, port)
-    print(f"build service on http://{host}:{port}  (pipeline version {PIPELINE_VERSION}, bundles in {svc.bundles_dir})", flush=True)
+    print(f"build service on http://{host}:{port}  (pipeline version {PIPELINE_VERSION}, bundles in {svc.bundles_dir}, cars {cars_note})", flush=True)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

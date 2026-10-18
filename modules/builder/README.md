@@ -7,6 +7,8 @@ someone running `build_area.py` by hand. It wraps the Python pipeline (`pipeline
 python3 modules/builder/server/serve.py        # http://127.0.0.1:8788   (HOST / PORT to change)
 ```
 
+`REMOVE_CARS=1 python3 modules/builder/server/serve.py` also paints parked cars out of the imagery of every build (see `pipeline/cars.py`; install `pipeline/requirements-cars.txt` into the Python that runs the service).
+
 The dev server forwards `/api` to it (`client/vite.config.js`), so with both running the game page can call `/api/builds`.
 
 ## API
