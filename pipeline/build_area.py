@@ -16,7 +16,7 @@ import rasterio
 
 import json
 
-from pipeline import bundle, buildings, cars, clean, dtm, heights, base, imagery, landcover, omlocal, terrain_fill, wales_lidar
+from pipeline import bundle, buildings, cars, clean, dtm, footprints, heights, base, imagery, landcover, omlocal, register, terrain_fill, wales_lidar
 
 NRW_ATTRIBUTION = "Contains Natural Resources Wales information © Natural Resources Wales and database right (OGL v3)"
 
@@ -31,7 +31,7 @@ def _log(msg):
 
 
 def build_area(bbox, area_id, out_dir="data/bundles", dtm_files=None, dtm_attribution=NRW_ATTRIBUTION,
-               buildings_source="auto", work_root="data/work", remove_cars=False):
+               buildings_source="auto", work_root="data/work", remove_cars=False, fill_footprints=False, register_imagery=False):
     bbox = tuple(float(v) for v in bbox)
     w = Path(work_root) / str(area_id)
     w.mkdir(parents=True, exist_ok=True)
@@ -75,10 +75,18 @@ def build_area(bbox, area_id, out_dir="data/bundles", dtm_files=None, dtm_attrib
         b = omlocal.fetch_omlocal_buildings(bbox, w / "buildings_oml.geojson")
         b_source = "OS Open Map Local"
     credits.append(buildings.ATTRIBUTION if b_source == "OpenStreetMap" else omlocal.ATTRIBUTION)
+    if fill_footprints and b_source == "OpenStreetMap" and len(b):     # OSM is patchy: take Open Map Local's buildings where OSM has none (kept below only if the LiDAR sees them)
+        n_osm = len(b)
+        b = footprints.add_missing(b, omlocal.fetch_omlocal_buildings(bbox, w / "buildings_oml.geojson"))
+        credits.append(omlocal.ATTRIBUTION)
+        summary["footprints_from_omlocal"] = len(b) - n_osm
     _log(f"Buildings: {len(b)} from {b_source}")
     if len(b):
         b = clean.clean_buildings(b)
         b = heights.assign_heights(b, w / "dtm.tif", dsm_path)
+        if fill_footprints and dsm_path is not None:
+            n_all = len(b); b = footprints.drop_unconfirmed(b)
+            summary["footprints_from_omlocal"] = summary.get("footprints_from_omlocal", 0) - (n_all - len(b))
         b = base.assign_base(b, w / "dtm.tif")
     summary.update(buildings=len(b), buildings_source=b_source)
     if len(b):
@@ -90,6 +98,13 @@ def build_area(bbox, area_id, out_dir="data/bundles", dtm_files=None, dtm_attrib
     img = imagery.fetch_imagery(bbox, w / "imagery.tif", source=src)
     credits.append(src.attribution)
     _log("Imagery fetched")
+    registration = None
+    if register_imagery and dsm_path is not None and len(b):     # the photo leans tall things away from their footprints: measure it and move them back
+        registration = register.fit_registration(b, w / "imagery.tif", w / "dtm.tif", dsm_path, omlocal.fetch_omlocal_roads(bbox))
+        refilled = register.warp_imagery(w / "imagery.tif", b, registration["ground"], registration["lean"], w / "imagery_registered.tif")
+        img = w / "imagery_registered.tif"
+        summary["registration"] = registration
+        _log(f"Photo registered: ground {registration['ground']} m, lean {registration['lean']} m per m of height, {refilled:.1%} refilled")
     if remove_cars:
         summary["cars_removed"] = cars.remove_cars(img, b)
         _log(f"Cars removed: {summary['cars_removed']}")
@@ -105,6 +120,11 @@ def build_area(bbox, area_id, out_dir="data/bundles", dtm_files=None, dtm_attrib
     if remove_cars:   # say so in the bundle, so a reader can tell a cleaned build from a plain one
         meta = json.loads((root / "meta.json").read_text())
         meta["cars_removed"] = summary["cars_removed"]
+        (root / "meta.json").write_text(json.dumps(meta, indent=2) + "\n")
+    if registration:      # the photo now matches the footprints, so the viewer must not shift roofs again
+        meta = json.loads((root / "meta.json").read_text())
+        meta["imagery_registration"] = registration
+        meta["imagery_lean"] = {"ground": [0, 0], "perMetre": [0, 0]}
         (root / "meta.json").write_text(json.dumps(meta, indent=2) + "\n")
     summary["bundle"] = str(root)
     _log(f"Wrote {root}")
@@ -123,6 +143,8 @@ def main(argv=None):
     ap.add_argument("--dtm-attribution", default=NRW_ATTRIBUTION, help="credit line for --dtm-file")
     ap.add_argument("--buildings", choices=["auto", "osm", "omlocal"], default="auto", dest="buildings_source")
     ap.add_argument("--remove-cars", action="store_true", help="paint parked cars out of the imagery (needs pipeline/requirements-cars.txt)")
+    ap.add_argument("--fill-footprints", action="store_true", help="add OS Open Map Local buildings where OSM has none (kept only where the LiDAR sees something tall)")
+    ap.add_argument("--register", action="store_true", dest="register_imagery", help="fit the photo's offset and lean from roads and footprints, and warp it onto the OS grid (needs a LiDAR surface)")
     a = ap.parse_args(argv)
     if a.centre:
         e, n = a.centre
@@ -132,7 +154,7 @@ def main(argv=None):
         bbox = a.bbox
     if not (bbox[0] < bbox[2] and bbox[1] < bbox[3]):
         sys.exit("bbox must be MINE MINN MAXE MAXN with min < max")
-    result = build_area(bbox, a.id, a.out, a.dtm_file, a.dtm_attribution, a.buildings_source, remove_cars=a.remove_cars)
+    result = build_area(bbox, a.id, a.out, a.dtm_file, a.dtm_attribution, a.buildings_source, remove_cars=a.remove_cars, fill_footprints=a.fill_footprints, register_imagery=a.register_imagery)
     print(result)
 
 

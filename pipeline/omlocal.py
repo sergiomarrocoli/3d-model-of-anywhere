@@ -61,6 +61,13 @@ def fetch_omlocal_buildings(bbox, out=None, cache=CACHE):
     return gdf
 
 
+def fetch_omlocal_roads(bbox, cache=CACHE):
+    """Road centrelines clipped to `bbox` (EPSG:27700), used to find where the aerial photo sits on the grid."""
+    parts = [gpd.read_file(f"zip://{ensure_zip(sq, cache)}!OS OpenMap Local (ESRI Shape File) {sq}/data/{sq}_Road.shp", bbox=tuple(bbox)) for sq in squares_for_bbox(bbox)]
+    gdf = gpd.GeoDataFrame(gpd.pd.concat(parts, ignore_index=True), crs=CRS) if parts else gpd.GeoDataFrame(geometry=[], crs=CRS)
+    return gdf[["geometry"]].copy() if len(gdf) else gdf
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--bbox", type=float, nargs=4, required=True, metavar=("MINE", "MINN", "MAXE", "MAXN"))
