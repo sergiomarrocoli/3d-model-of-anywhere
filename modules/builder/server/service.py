@@ -36,6 +36,11 @@ class BuildError(ValueError):
     """The request was not acceptable (bad box, too big, queue full...). Message is safe to show the user."""
 
 
+def bundles_dir_setting(env_value, default):
+    """Where finished areas go: BUNDLES_DIR if it is set (so a game can point the service at the folder it serves), else `default`."""
+    return Path(env_value).expanduser().resolve() if env_value else Path(default)
+
+
 def snap(v, step=SNAP_M):
     return int(round(v / step) * step)
 

@@ -15,7 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from service import BuildError, BuildService, cars_setting, subprocess_runner, valid_id  # noqa: E402
+from service import BuildError, BuildService, bundles_dir_setting, cars_setting, subprocess_runner, valid_id  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 MAX_BODY = 2048
@@ -84,7 +84,7 @@ if __name__ == "__main__":
     from pipeline import PIPELINE_VERSION
     import importlib.util
     remove_cars, cars_note = cars_setting(os.environ.get("REMOVE_CARS"), importlib.util.find_spec("cardet") is not None)
-    svc = BuildService(ROOT / "data" / "bundles", subprocess_runner(ROOT, remove_cars=remove_cars), PIPELINE_VERSION)
+    svc = BuildService(bundles_dir_setting(os.environ.get("BUNDLES_DIR"), ROOT / "data" / "bundles"), subprocess_runner(ROOT, remove_cars=remove_cars), PIPELINE_VERSION)
     host, port = os.environ.get("HOST", "127.0.0.1"), int(os.environ.get("PORT", "8788"))
     httpd = make_server(svc, host, port)
     print(f"build service on http://{host}:{port}  (pipeline version {PIPELINE_VERSION}, bundles in {svc.bundles_dir}, cars {cars_note})", flush=True)

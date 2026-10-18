@@ -6,7 +6,7 @@ import urllib.request
 import pytest
 
 import service as svc
-from service import BuildError, BuildService, area_id, cars_setting, normalise_box, snap, valid_id
+from service import BuildError, BuildService, area_id, bundles_dir_setting, cars_setting, normalise_box, snap, valid_id
 
 V = 3
 
@@ -192,3 +192,14 @@ class TestCarsSetting:
         finally:
             svc.subprocess.Popen = orig
         assert "--remove-cars" in seen[0] and "--remove-cars" not in seen[1]
+
+
+class TestBundlesDir:
+    def test_default_when_unset(self, tmp_path):
+        assert bundles_dir_setting(None, tmp_path / "data") == tmp_path / "data"
+        assert bundles_dir_setting("", tmp_path / "data") == tmp_path / "data"
+
+    def test_the_setting_wins_and_is_made_absolute(self, tmp_path, monkeypatch):
+        assert bundles_dir_setting(str(tmp_path / "game" / "bundles"), tmp_path / "data") == (tmp_path / "game" / "bundles").resolve()
+        monkeypatch.chdir(tmp_path)
+        assert bundles_dir_setting("rel/bundles", "ignored") == (tmp_path / "rel" / "bundles").resolve()
