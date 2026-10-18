@@ -1,5 +1,6 @@
 // Bundle inspector (?debug): summary, imagery with building outlines, and the heightmap in greyscale.
 import { loadBundle } from './bundle.js';
+import { SURFACE_NAMES, landcoverPixels } from './landcover.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -8,7 +9,7 @@ export async function debugMain() {
 
   $('summary').hidden = false; $('dbgrow').hidden = false;
   const t0 = performance.now();
-  const { meta, heightmap, imagery, buildings } = await loadBundle(`/bundles/area_${area}`);
+  const { meta, heightmap, imagery, buildings, landcover } = await loadBundle(`/bundles/area_${area}`);
   const ms = Math.round(performance.now() - t0);
 
   let zmin = Infinity, zmax = -Infinity;
@@ -19,6 +20,7 @@ export async function debugMain() {
     `origin:     E ${meta.origin[0]}, N ${meta.origin[1]}`,
     `heightmap:  ${heightmap.width} x ${heightmap.height} @ ${heightmap.resolution} m, ${zmin.toFixed(1)}..${zmax.toFixed(1)} m`,
     `imagery:    ${imagery.width} x ${imagery.height}`,
+    landcover ? `landcover:  ${landcover.width} x ${landcover.height} @ ${landcover.resolution} m: ${Object.entries(meta.landcover.share).map(([k, v]) => `${k} ${Math.round(v * 100)}%`).join(', ')}` : 'landcover:  none',
     `buildings:  ${buildings.features.length}, heights ${Math.min(...heights).toFixed(1)}..${Math.max(...heights).toFixed(1)} m`,
     `loaded in ${ms} ms`,
     '', 'credits:', ...meta.attribution.map((a) => `  ${a}`),
@@ -41,6 +43,13 @@ export async function debugMain() {
   const px = g2.createImageData(heightmap.width, heightmap.height);
   heightmap.data.forEach((v, i) => { const g = ((v - zmin) / (zmax - zmin || 1)) * 255; px.data.set([g, g, g, 255], i * 4); });
   g2.putImageData(px, 0, 0);
+  if (landcover) {
+    const c3 = $('landcover'); c3.hidden = false; c3.width = landcover.width; c3.height = landcover.height;
+    const px3 = new ImageData(landcoverPixels(landcover), landcover.width, landcover.height);
+    for (let i = 3; i < px3.data.length; i += 4) px3.data[i] = 255;                      // opaque here: unknown shows black
+    c3.getContext('2d').putImageData(px3, 0, 0);
+    c3.title = SURFACE_NAMES.map((n, i) => `${i} ${n}`).join(', ');
+  }
   document.title = `uk-map-3d: ${meta.id}`;
   window.__bundle = { meta, heightmap, buildings }; // for console poking
 }

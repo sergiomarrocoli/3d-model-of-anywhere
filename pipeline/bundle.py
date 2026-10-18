@@ -4,6 +4,7 @@
       meta.json          bbox, origin, sizes, heightmap encoding, attribution
       heightmap.png      16-bit greyscale DTM; metres = min + (v / 65535) * (max - min)
       surfacemap.png     (optional) same encoding, LiDAR DSM on the DTM grid: ground + roofs + trees, never below the DTM
+      landcover.png      (optional) 8-bit greyscale, one class id per 0.5 m cell (see pipeline/landcover.py CLASSES), rows north to south
       imagery.jpg        orthophoto clipped to the bbox
       buildings.geojson  local metre coords (origin = SW corner); props: base_z, height, ...
       ATTRIBUTION.txt    credits for every source used
@@ -24,6 +25,7 @@ from shapely.affinity import translate
 from shapely.geometry import mapping
 
 from . import PIPELINE_VERSION
+from .landcover import CLASSES
 
 BUNDLE_VERSION = 1
 BUILDING_PROPS = ("building", "osm_id", "height", "base_z", "height_source",
@@ -85,7 +87,7 @@ def surface_from_dsm(dsm_path, dtm_path, z_ground):
     return np.maximum(out, z_ground)
 
 
-def write_bundle(out_dir, area_id, dtm_path, imagery_path, buildings, attributions, dsm_path=None):
+def write_bundle(out_dir, area_id, dtm_path, imagery_path, buildings, attributions, dsm_path=None, landcover=None):
     """Write a bundle into `out_dir/area_<area_id>/` and return its path.
 
     `dtm_path` and `imagery_path` must share one extent (EPSG:27700); `buildings` is a GeoDataFrame
@@ -116,6 +118,14 @@ def write_bundle(out_dir, area_id, dtm_path, imagery_path, buildings, attributio
     elif (root / "surfacemap.png").exists():
         (root / "surfacemap.png").unlink()  # stale file from an earlier build of this id
     Image.fromarray(rgb).save(root / "imagery.jpg", quality=90)
+    land = None
+    if landcover is not None:
+        grid, info = landcover
+        Image.fromarray(grid, "L").save(root / "landcover.png", optimize=True)
+        land = {"file": "landcover.png", "width": grid.shape[1], "height": grid.shape[0], "resolution_m": info["resolution_m"],
+                "classes": {str(k): v for k, v in CLASSES.items()}, "share": info["share"], "canopy_from_lidar": info["canopy_from_lidar"]}
+    elif (root / "landcover.png").exists():
+        (root / "landcover.png").unlink()  # stale file from an earlier build of this id
 
     origin = (b.left, b.bottom)
     fc = _local_buildings(buildings, origin)
@@ -136,6 +146,7 @@ def write_bundle(out_dir, area_id, dtm_path, imagery_path, buildings, attributio
         "heightmap": {"file": "heightmap.png", "width": dtm_size[0], "height": dtm_size[1], "resolution_m": res[0],
                       "bits": 16, "min": z_min, "max": z_max},
         **({"surfacemap": surface} if surface else {}),
+        **({"landcover": land} if land else {}),
         "imagery": {"file": "imagery.jpg", "width": img_size[0], "height": img_size[1]},
         "buildings": {"file": "buildings.geojson", "count": len(fc["features"]),
                       "coords": "local metres from the south-west corner"},

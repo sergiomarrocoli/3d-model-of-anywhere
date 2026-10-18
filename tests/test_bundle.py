@@ -90,3 +90,19 @@ def test_meta_records_the_pipeline_version(tmp_path, inputs):
     dtm, img, b, _ = inputs
     meta = json.loads((write_bundle(tmp_path, "t6", dtm, img, b, []) / "meta.json").read_text())
     assert meta["pipeline_version"] == PIPELINE_VERSION
+
+
+def test_landcover_is_written_as_class_ids_and_described_in_meta(tmp_path, inputs):
+    from PIL import Image
+    dtm, img, b, _ = inputs
+    grid = np.zeros((80, 80), np.uint8)
+    grid[:40] = 6                                                  # the northern half is water
+    info = {"resolution_m": 0.5, "share": {"water": 0.5, "unknown": 0.5}, "canopy_from_lidar": False}
+    root = write_bundle(tmp_path, "t7", dtm, img, b, [], landcover=(grid, info))
+    back = np.asarray(Image.open(root / "landcover.png"))
+    assert back.shape == (80, 80) and back[0, 0] == 6 and back[-1, 0] == 0                       # rows north to south, ids kept
+    meta = json.loads((root / "meta.json").read_text())["landcover"]
+    assert meta["file"] == "landcover.png" and meta["resolution_m"] == 0.5 and meta["classes"]["6"] == "water"
+    # a rebuild without it removes the stale file and entry
+    root = write_bundle(tmp_path, "t7", dtm, img, b, [])
+    assert not (root / "landcover.png").exists() and "landcover" not in json.loads((root / "meta.json").read_text())

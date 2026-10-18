@@ -70,6 +70,7 @@ def stubbed(tmp_path, monkeypatch):
         _tif(out, np.full((3, 128, 128), 128, dtype="uint8"), res=100 / 128, e0=bbox[0], n0=bbox[1])
         return out
     monkeypatch.setattr(ba.imagery, "fetch_imagery", fake_imagery)
+    monkeypatch.setattr(ba.landcover, "fetch_elements", lambda bbox: [])   # no network in tests
 
     calls = []
 

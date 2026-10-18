@@ -2,6 +2,7 @@
 // Local coordinates: metres east (x) and north (y) of the box's south-west corner.
 // Raster rows run north to south; heightmap pixel (col, row) is the elevation at x = col + 0.5, y = height - row - 0.5.
 import { decode } from 'fast-png';
+import { decodeLandcover } from './landcover.js';
 
 export function decodeHeightmap(pngBytes, hm) {
   const png = decode(pngBytes);
@@ -25,11 +26,12 @@ export async function loadBundle(baseUrl, { fetchImpl = fetch, loadImage = brows
   const base = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
   const meta = await (await fetchOk(`${base}meta.json`, fetchImpl)).json();
   if (meta.version !== 1) throw new Error(`unsupported bundle version ${meta.version}`);
-  const [pngBuf, imgBlob, buildings, surfBuf] = await Promise.all([
+  const [pngBuf, imgBlob, buildings, surfBuf, landBuf] = await Promise.all([
     fetchOk(base + meta.heightmap.file, fetchImpl).then((r) => r.arrayBuffer()),
     fetchOk(base + meta.imagery.file, fetchImpl).then((r) => r.blob()),
     fetchOk(base + meta.buildings.file, fetchImpl).then((r) => r.json()),
     meta.surfacemap ? fetchOk(base + meta.surfacemap.file, fetchImpl).then((r) => r.arrayBuffer()) : null, // optional LiDAR DSM
+    meta.landcover ? fetchOk(base + meta.landcover.file, fetchImpl).then((r) => r.arrayBuffer()) : null,   // optional land cover
   ]);
   if (buildings.type !== 'FeatureCollection' || buildings.features.length !== meta.buildings.count) {
     throw new Error(`buildings file does not match meta (${buildings.features?.length} vs ${meta.buildings.count})`);
@@ -38,6 +40,7 @@ export async function loadBundle(baseUrl, { fetchImpl = fetch, loadImage = brows
     meta,
     heightmap: decodeHeightmap(new Uint8Array(pngBuf), meta.heightmap),
     surface: surfBuf ? decodeHeightmap(new Uint8Array(surfBuf), meta.surfacemap) : null,
+    landcover: landBuf ? decodeLandcover(new Uint8Array(landBuf), meta.landcover) : null,
     imagery: await loadImage(imgBlob),
     buildings,
   };

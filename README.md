@@ -16,7 +16,7 @@ a Cannon Fodder style walker, multiplayer) live in `civil-war`, which installs t
 - `modules/`: `picker` (choose a box on a map), `builder` (an HTTP service that builds it), `map` (reads a bundle, draws it,
   answers ground-height, collision and destruction questions), `credits` (the source and licence lines) and `flow` (the step
   runner). See [modules/README.md](modules/README.md).
-- `src/main.js`: the viewer, which picks, builds and flies round an area.
+- `src/main.js`: the viewer, which picks, builds and flies round an area. `?landcover` (or the L key) tints the ground by land cover.
 - Cars are painted out of the imagery, optionally, by [aerial-car-detector](https://github.com/sergiomarrocoli/aerial-car-detector) (a fine-tuned YOLO11n, 5.7 MB): `pipeline/cars.py`. See "Remove cars" below.
 
 ## Run it
@@ -29,6 +29,22 @@ npm run dev                             # http://localhost:5173/?area=<id>; ?pic
 python3 modules/builder/server/serve.py # the build service the picker uses
 npm test && python3 -m pytest           # JavaScript and Python tests
 ```
+
+## Land cover
+
+Every build also writes `landcover.png`: one class id per half metre (road, paved, grass, bare, tree, water, building), so a
+game can ask what is under a wheel (`map.surfaceAt(x, z)`, see [modules/map/README.md](modules/map/README.md)). It is made
+by rules over open data, with no model (`pipeline/landcover.py`):
+
+- roads, paths, rail and rivers from OpenStreetMap lines, widened by the tagged or typical width; water, woods, parks and
+  car parks from its areas
+- trees from LiDAR canopy height (surface minus terrain) where there is LiDAR, outside buildings
+- buildings from the footprints; bridges win over the water and rail beneath, roads win over the trees that overhang them
+- anything left is guessed from colour (a green cast is grass, grey is paved, the rest bare)
+
+Known weak spots: the colour guess cannot tell dull grass from tarmac in this imagery, so grass the OSM data does not map
+(lawns, verges, gardens) is often called paved. A later phase will replace the guess with a segmentation model (issue #5).
+In a 300 m box of Newtown the result is about 29% paved, 18% tree, 16% building, 13% grass, 12% road, 10% bare.
 
 ## Remove cars
 

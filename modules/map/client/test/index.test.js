@@ -15,6 +15,24 @@ const bundle = () => ({
   buildings: { type: 'FeatureCollection', features: [{ type: 'Feature', properties: { base_z: 12, height: 8 }, geometry: { type: 'Polygon', coordinates: [sq(20, 20, 30, 30)] } }] },
 });
 
+describe('createMap land cover', () => {
+  // 100 x 80 m, 0.5 m cells: the west half (x < 50) is grass, the east half road, except a river along y 70..80 (the north edge).
+  const w = 200, h = 160, data = new Uint8Array(w * h);
+  for (let r = 0; r < h; r++) for (let c = 0; c < w; c++) data[r * w + c] = r < 20 ? 6 : c < 100 ? 3 : 1;
+  const map = createMap({ ...bundle(), landcover: { width: w, height: h, resolution: 0.5, data } });
+  it('says what the ground is at a world point (X east, Z = -north)', () => {
+    expect(map.surfaceAt(20, -40)).toEqual({ id: 3, name: 'grass' });
+    expect(map.surfaceAt(80, -40)).toEqual({ id: 1, name: 'road' });
+    expect(map.surfaceAt(20, -75)).toEqual({ id: 6, name: 'water' });                  // y = 75 m north
+    expect(map.surfaceIdAt(80, -40)).toBe(1);
+  });
+  it('is unknown everywhere when the bundle has no layer, and the overlay does nothing', () => {
+    const plain = createMap(bundle());
+    expect(plain.hasLandcover).toBe(false); expect(plain.surfaceAt(20, -40)).toEqual({ id: 0, name: 'unknown' }); expect(plain.showLandcover(true)).toBe(false);
+    expect(map.hasLandcover).toBe(true);
+  });
+});
+
 describe('createMap', () => {
   const map = createMap(bundle());
 
