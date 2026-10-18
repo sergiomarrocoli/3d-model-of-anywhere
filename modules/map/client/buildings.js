@@ -12,6 +12,15 @@ export const WALL_SAMPLE_INSET_M = 0.75;
 // read as shaded verticals next to the roofs. Set as an sRGB grey, so it scales the displayed pixel values.
 export const WALL_BRIGHTNESS = 0.75;
 
+// The aerial photo is taken at an angle, so a roof shows up displaced from its footprint: by the ground offset of the photo plus its height times the
+// lean, in metres east and north. Measured on Newtown by sliding the footprints over the photo's edges (the roads give the ground offset).
+export const IMAGERY_LEAN = { ground: [0, 1], perMetre: [0.35, -0.05] };
+
+/** Metres [east, north] to move a roof's imagery lookup so a roof `height` metres tall reads its own pixels (and not the ground beside it). */
+export function roofImageryShift(height, lean = IMAGERY_LEAN) {
+  return [lean.ground[0] + height * lean.perMetre[0], lean.ground[1] + height * lean.perMetre[1]];
+}
+
 // Pitched roofs (when the bundle has a surfacemap): each building gets the simple roof (flat, shed, gable or hip, see roof.js) that best
 // matches the LiDAR DSM, with vertical walls up to the eaves and gable ends. Where there is too little data the roof follows the raw DSM.
 export const ROOF_GRID_M = 2;          // roofs that follow the raw DSM are refined until no edge is longer than this
@@ -255,7 +264,7 @@ function refineTriangles(verts, tris, maxLen, creases = []) {
  * With it, the roof follows the LiDAR DSM: roofs are refined to ROOF_GRID_M triangles whose vertex heights are
  * sampled from the surface, and each wall's top edge follows the roof edge.
  * Returns two merged geometries: `walls` (own quads per edge, flat normals; UVs point at the imagery pixels along the
- * footprint edge, so each wall takes the colours of the satellite image it stands on) and `roofs` (caps with the same planar imagery UVs as the terrain, so roofs show the real roof pixels).
+ * footprint edge, so each wall takes the colours of the satellite image it stands on) and `roofs` (caps with planar imagery UVs shifted by the photo's lean, see roofImageryShift, so roofs show the real roof pixels).
  */
 export function buildBuildingGeometry(meta, buildings, surface = null) {
   const [W, H] = meta.size_m;
@@ -271,6 +280,7 @@ export function buildBuildingGeometry(meta, buildings, surface = null) {
     const base = f.properties.base_z ?? meta.heightmap.min;
     const height = f.properties.height ?? DEFAULT_HEIGHT_M;
     const flatTop = base + height;
+    const [shiftE, shiftN] = roofImageryShift(height, meta.imagery_lean);   // roofs look up the photo here, not straight under themselves
     const look = facadeLook(f.properties, height);
     // Per-wall facade inputs for the shader (see FACADE_GLSL): base elevation, the wall's top elevation at each end, its length and the floor height, then the look
     const pushFacade = (top0, top1, length) => {
@@ -341,7 +351,7 @@ export function buildBuildingGeometry(meta, buildings, surface = null) {
       const copy = new Map(), onCut = new Map(), stride = verts.length + 1;
       const vertexIn = (v, zone) => {
         const key = v * 64 + zone.id; let i = copy.get(key);
-        if (i === undefined) { const [x, y] = verts[v]; i = rp.length / 3; rp.push(...toWorld(meta, x, y, roofZ(x, y, zone))); rn.push(0, 1, 0); ruv.push(x / W, 1 - y / H); copy.set(key, i); }
+        if (i === undefined) { const [x, y] = verts[v]; i = rp.length / 3; rp.push(...toWorld(meta, x, y, roofZ(x, y, zone))); rn.push(0, 1, 0); ruv.push((x + shiftE) / W, 1 - (y + shiftN) / H); copy.set(key, i); }
         return i;
       };
       const onSameCut = (u, v) => fit.lines.some((L) => Math.abs(L(verts[u][0], verts[u][1])) < CREASE_EPS && Math.abs(L(verts[v][0], verts[v][1])) < CREASE_EPS);
@@ -382,7 +392,7 @@ export function buildBuildingGeometry(meta, buildings, surface = null) {
       for (const [x, y] of verts) {
         rp.push(...toWorld(meta, x, y, roofZ(x, y)));
         rn.push(0, 1, 0);
-        ruv.push(x / W, 1 - y / H);
+        ruv.push((x + shiftE) / W, 1 - (y + shiftN) / H);
       }
       for (const [a, b, c] of tris) upFace(k0 + a, k0 + b, k0 + c, a, b, c);
     }
