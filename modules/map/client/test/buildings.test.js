@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { buildBuildingGeometry, buildBuildings, WALL_BRIGHTNESS, WALL_SAMPLE_INSET_M } from '../buildings.js';
+import { buildBuildingGeometry, buildBuildings, IMAGERY_LEAN, roofImageryShift, WALL_BRIGHTNESS, WALL_SAMPLE_INSET_M } from '../buildings.js';
 
 const meta = { size_m: [100, 100], heightmap: { min: 10 } };
 const fc = (...features) => ({ type: 'FeatureCollection', features });
@@ -51,10 +51,10 @@ for (const [name, ring] of [['CCW', sq(10, 20, 30, 40)], ['CW', sqCW(10, 20, 30,
         }
       }
     });
-    it('gives roofs planar imagery UVs', () => {
-      const ru = roofs.getAttribute('uv'), rp = roofs.getAttribute('position');
-      for (let i = 0; i < rp.count; i++) { // u = x / width, v = 1 - y / height, with world x = x and world z = -y
-        expect(ru.getX(i)).toBeCloseTo(rp.getX(i) / 100); expect(ru.getY(i)).toBeCloseTo(1 + rp.getZ(i) / 100);
+    it('gives roofs planar imagery UVs, moved by the photo\'s lean for the building\'s height', () => {
+      const ru = roofs.getAttribute('uv'), rp = roofs.getAttribute('position'), [se, sn] = roofImageryShift(8);   // u = (x + east) / width, v = 1 - (y + north) / height, world x = x and z = -y
+      for (let i = 0; i < rp.count; i++) {
+        expect(ru.getX(i)).toBeCloseTo((rp.getX(i) + se) / 100); expect(ru.getY(i)).toBeCloseTo(1 + (rp.getZ(i) - sn) / 100);
       }
     });
   });
@@ -293,5 +293,27 @@ describe('wall patchwork texture', () => {
   it('buildBuildings still produces walls and roofs', () => {
     const grp = buildBuildings(meta, fc(poly([sq(10, 20, 30, 40)])), new THREE.Texture());
     expect(grp.children.map((c) => c.name)).toEqual(['walls', 'roofs']);
+  });
+});
+
+describe('roof imagery shift (the aerial photo leans tall buildings away from their footprints)', () => {
+  it('is the ground offset plus height times the lean, so a taller roof moves further', () => {
+    expect(roofImageryShift(0)).toEqual(IMAGERY_LEAN.ground);
+    const [e4, n4] = roofImageryShift(4), [e8, n8] = roofImageryShift(8);
+    expect(e8 - e4).toBeCloseTo(4 * IMAGERY_LEAN.perMetre[0]); expect(n8 - n4).toBeCloseTo(4 * IMAGERY_LEAN.perMetre[1]);
+  });
+  const roofUv = (props, m = meta) => { const { roofs } = buildBuildingGeometry(m, fc(poly([sq(10, 20, 30, 40)], props))), u = roofs.getAttribute('uv'); return [u.getX(0), u.getY(0)]; };
+  it('uses each building\'s own height, and leaves the roof geometry and the walls where the footprint is', () => {
+    const low = roofUv({ base_z: 12, height: 4 }), high = roofUv({ base_z: 12, height: 12 });
+    expect(high[0]).toBeGreaterThan(low[0]);                                  // east lean: the taller roof reads further east in the photo
+    const { walls, roofs } = buildBuildingGeometry(meta, fc(poly([sq(10, 20, 30, 40)])));
+    const xs = [...roofs.getAttribute('position').array].filter((_, i) => i % 3 === 0);
+    expect(Math.min(...xs)).toBe(10); expect(Math.max(...xs)).toBe(30);       // geometry is not moved, only the imagery lookup
+    const wu = walls.getAttribute('uv');
+    expect(wu.getX(0) * 100).toBeLessThan(31);                                // wall colours are still sampled at the footprint edge
+  });
+  it('takes the lean from the bundle meta when it has one', () => {
+    const none = roofUv({ base_z: 12, height: 8 }, { ...meta, imagery_lean: { ground: [0, 0], perMetre: [0, 0] } });
+    expect(none[0]).toBeCloseTo(10 / 100); expect(none[1]).toBeCloseTo(1 - 20 / 100);   // the first roof vertex is the footprint corner (10, 20), unshifted
   });
 });
