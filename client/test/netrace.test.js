@@ -14,10 +14,10 @@ function fakeRoom(state = {}) {
 const fakeRacer = () => {
   const calls = [], field = [];
   const racer = {
-    field, isHost: true, canSend: true, snapshot: () => ({ x: 1.234, z: -5.678, h: 0.12345, vx: 3, vz: 4, s: 0.01 }),
+    field, isHost: true, canSend: true, snapshot: () => ({ x: 1.234, z: -5.678, h: 0.12345, vx: 3, vz: 4, s: 0.01, d: 0.456 }),
     setColour: (c) => calls.push(['colour', c]), setHost(v) { racer.isHost = v; calls.push(['host', v]); },
     addRemote: (id, o) => { calls.push(['add', id, o.name]); if (!field.some((f) => f.id === id)) field.push({ id }); }, removeRemote: (id) => calls.push(['remove', id]),
-    setRemote: (id, s) => calls.push(['set', id, s.x]), applyEvent: (k, d) => calls.push(['event', k, d]), hostRestart: () => calls.push(['restart']),
+    setRemote: (id, s) => calls.push(['set', id, s.x]), applyBoom: (id) => calls.push(['boom', id]), set onBoom(fn) { racer.boom = fn; }, applyEvent: (k, d) => calls.push(['event', k, d]), hostRestart: () => calls.push(['restart']),
   };
   return { racer, calls };
 };
@@ -43,8 +43,8 @@ describe('tracks', () => {
   });
   it('the host sends the track and counts itself as the host', () => {
     const { room, sent } = fakeRoom();
-    sendTrack(room, { points: [[0, 0], [1, 1], [2, 0]], lengthM: 9, width: 8, area: 'x', mode: 'grandprix' });
-    expect(sent[0]).toEqual({ t: 'track', points: [[0, 0], [1, 1], [2, 0]], lengthM: 9, width: 8, mode: 'grandprix' }); expect(room.state.host).toBe('2');
+    sendTrack(room, { points: [[0, 0], [1, 1], [2, 0]], lengthM: 9, width: 8, area: 'x', mode: 'grandprix', damage: true });
+    expect(sent[0]).toEqual({ t: 'track', points: [[0, 0], [1, 1], [2, 0]], lengthM: 9, width: 8, mode: 'grandprix', damage: true }); expect(room.state.host).toBe('2');
   });
 });
 
@@ -78,6 +78,11 @@ describe('attachRace', () => {
     expect(calls).toEqual([['host', true], ['restart']]);
     calls.length = 0; room.state.host = '2'; say({ t: 'host', id: '2' }); expect(calls).toEqual([['host', true]]);   // told again: nothing more to do
   });
+  it('announces our wreck, and shows the others\'', () => {
+    const { room, sent, say } = fakeRoom({ host: '1' }); const { racer, calls } = fakeRacer(); attachRace(room, racer); sent.length = 0; calls.length = 0;
+    racer.boom(); expect(sent).toEqual([{ t: 'boom' }]);
+    say({ t: 'boom', id: '9' }); expect(calls).toEqual([['boom', '9']]);
+  });
   it('shows other cars, adding one it has not heard of', () => {
     const { room, say } = fakeRoom({ host: '1' }); const { racer, calls } = fakeRacer(); attachRace(room, racer);
     room.state.peers.set('9', { id: '9', name: 'Bob' }); calls.length = 0; say({ t: 'car', id: '9', x: 4 }); expect(calls).toEqual([['add', '9', 'Bob'], ['set', '9', 4]]);
@@ -85,7 +90,7 @@ describe('attachRace', () => {
   it('sends our car at the right rate, rounded, only while racing', () => {
     const { room, sent } = fakeRoom({ host: '1' }); const { racer } = fakeRacer(); const net = attachRace(room, racer); sent.length = 0;
     net.tick(1 / CAR_SEND_HZ / 2); expect(sent).toEqual([]);
-    net.tick(1 / CAR_SEND_HZ / 2); expect(sent).toEqual([{ t: 'car', x: 1.23, z: -5.68, h: 0.123, vx: 3, vz: 4, s: 0.01 }]);
+    net.tick(1 / CAR_SEND_HZ / 2); expect(sent).toEqual([{ t: 'car', x: 1.23, z: -5.68, h: 0.123, vx: 3, vz: 4, s: 0.01, d: 0.46 }]);
     racer.canSend = false; net.tick(1); expect(sent.length).toBe(1);
     net.dispose(); expect(room.conn.close).toHaveBeenCalled();
   });
