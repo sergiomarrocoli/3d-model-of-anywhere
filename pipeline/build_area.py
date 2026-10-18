@@ -75,15 +75,22 @@ def build_area(bbox, area_id, out_dir="data/bundles", dtm_files=None, dtm_attrib
         b = omlocal.fetch_omlocal_buildings(bbox, w / "buildings_oml.geojson")
         b_source = "OS Open Map Local"
     credits.append(buildings.ATTRIBUTION if b_source == "OpenStreetMap" else omlocal.ATTRIBUTION)
+    _log(f"Buildings: {len(b)} from {b_source}")
+    if fill_footprints and (b_source != "OpenStreetMap" or not len(b)):
+        _log("Footprints not filled: only OSM buildings have gaps to fill (Open Map Local is already the source here)")
     if fill_footprints and b_source == "OpenStreetMap" and len(b):     # OSM is patchy: take Open Map Local's buildings where OSM has none (kept below only if the LiDAR sees them)
         n_osm = len(b)
         b = footprints.add_missing(b, omlocal.fetch_omlocal_buildings(bbox, w / "buildings_oml.geojson"))
         credits.append(omlocal.ATTRIBUTION)
         summary["footprints_from_omlocal"] = len(b) - n_osm
-    _log(f"Buildings: {len(b)} from {b_source}")
+        _log(f"Open Map Local adds {len(b) - n_osm} buildings OSM does not have (kept below only if the LiDAR sees them)")
     if len(b):
         b = clean.clean_buildings(b)
         b = heights.assign_heights(b, w / "dtm.tif", dsm_path)
+        if fill_footprints and dsm_path is None and "footprints_from_omlocal" in summary:   # no LiDAR to confirm them, so none of the additions can be trusted
+            b = b[~b["osm_id"].astype(str).str.startswith(footprints.OML_PREFIX)].reset_index(drop=True)
+            summary["footprints_from_omlocal"] = 0
+            _log("Open Map Local additions dropped: there is no LiDAR surface to confirm them")
         if fill_footprints and dsm_path is not None:
             n_all = len(b); b = footprints.drop_unconfirmed(b)
             summary["footprints_from_omlocal"] = summary.get("footprints_from_omlocal", 0) - (n_all - len(b))
@@ -99,6 +106,8 @@ def build_area(bbox, area_id, out_dir="data/bundles", dtm_files=None, dtm_attrib
     credits.append(src.attribution)
     _log("Imagery fetched")
     registration = None
+    if register_imagery and (dsm_path is None or not len(b)):
+        _log("Photo not registered: it needs a LiDAR surface and some buildings to measure against")
     if register_imagery and dsm_path is not None and len(b):     # the photo leans tall things away from their footprints: measure it and move them back
         registration = register.fit_registration(b, w / "imagery.tif", w / "dtm.tif", dsm_path, omlocal.fetch_omlocal_roads(bbox))
         refilled = register.warp_imagery(w / "imagery.tif", b, registration["ground"], registration["lean"], w / "imagery_registered.tif")
@@ -121,7 +130,7 @@ def build_area(bbox, area_id, out_dir="data/bundles", dtm_files=None, dtm_attrib
         meta = json.loads((root / "meta.json").read_text())
         meta["cars_removed"] = summary["cars_removed"]
         (root / "meta.json").write_text(json.dumps(meta, indent=2) + "\n")
-    if registration:      # the photo now matches the footprints, so the viewer must not shift roofs again
+    if registration and (any(registration["ground"]) or any(registration["lean"])):      # the photo now matches the footprints, so the viewer must not shift roofs again
         meta = json.loads((root / "meta.json").read_text())
         meta["imagery_registration"] = registration
         meta["imagery_lean"] = {"ground": [0, 0], "perMetre": [0, 0]}

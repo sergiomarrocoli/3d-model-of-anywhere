@@ -8,13 +8,18 @@ Usage in the pipeline: `merged = add_missing(osm, oml)`, assign heights, then `d
 """
 import geopandas as gpd
 
+MIN_AREA_M2 = 15.0            # Open Map Local also has party-wall and gap fragments: an addition must be a plausible building (a garage is about 15 m2)
+MIN_WIDTH_M = 2.0             # mean width, 2 x area / perimeter
 MAX_OVERLAP = 0.25            # an Open Map Local building more than this covered by OSM buildings is the same building, not a new one
 OML_PREFIX = "oml/"
 
 
-def add_missing(osm, oml, max_overlap=MAX_OVERLAP):
-    """`osm` plus the buildings of `oml` that OSM does not already have (both EPSG:27700 GeoDataFrames)."""
+def add_missing(osm, oml, max_overlap=MAX_OVERLAP, min_area=MIN_AREA_M2, min_width=MIN_WIDTH_M):
+    """`osm` plus the buildings of `oml` that OSM does not already have (both EPSG:27700 GeoDataFrames), leaving out slivers."""
     if oml is None or oml.empty:
+        return osm
+    oml = oml[(oml.area >= min_area) & (2 * oml.area / oml.length >= min_width)]
+    if oml.empty:
         return osm
     if osm.empty:
         return oml.copy()

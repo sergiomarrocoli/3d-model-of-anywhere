@@ -13,6 +13,8 @@ Measuring (all by sliding things over the photo's edges, so no feature detection
 Undoing: each footprint moves as one rigid piece by its own shift (a roof is flat enough; the LiDAR is too noisy to warp
 per pixel), and the ground that a leaned roof had covered is refilled smoothly from the ground around it.
 """
+import shutil
+
 import numpy as np
 import rasterio
 from PIL import Image, ImageDraw
@@ -25,6 +27,7 @@ SEARCH_M, SEARCH_STEP_M = 10.0, 0.5
 LEAN_E = np.arange(-0.2, 1.001, 0.05)
 LEAN_N = np.arange(-0.5, 0.501, 0.05)
 ROAD_HALF_WIDTH_M = 6.0
+MAX_FIT_BUILDINGS = 250        # the lean is one number: a spread-out sample of this many pins it down, and the fit costs time per building
 DEFAULT = {"ground": [0.0, 0.0], "lean": [0.0, 0.0]}
 
 
@@ -99,10 +102,12 @@ def fit_lean(buildings, imagery_path, ground):
     rgb, tr, res, _ = _grid(imagery_path)
     g = _gradient(rgb)
     shifts = np.arange(-SEARCH_M, SEARCH_M + 1e-6, SEARCH_STEP_M)
+    usable = [(geom, h) for geom, h in zip(buildings.geometry, buildings["height"])
+              if h >= MIN_FIT_HEIGHT_M and geom.geom_type == "Polygon" and geom.exterior.length >= MIN_FIT_OUTLINE_M]
+    if len(usable) > MAX_FIT_BUILDINGS:                        # every k-th, in file order: deterministic and spread over the area
+        usable = [usable[int(i * len(usable) / MAX_FIT_BUILDINGS)] for i in range(MAX_FIT_BUILDINGS)]
     surfaces, heights = [], []
-    for geom, h in zip(buildings.geometry, buildings["height"]):
-        if h < MIN_FIT_HEIGHT_M or geom.geom_type != "Polygon" or geom.exterior.length < MIN_FIT_OUTLINE_M:
-            continue
+    for geom, h in usable:
         pts = _outline_points(geom)
         S = np.empty((len(shifts), len(shifts)), dtype="float32")
         for i, dy in enumerate(shifts):
@@ -154,6 +159,9 @@ def _push_pull(img, hole):
 
 def warp_imagery(imagery_path, buildings, ground, lean, out_path):
     """Write the photo with every footprint moved back to where it really is. Returns the share of pixels refilled."""
+    if not any(ground) and not any(lean):          # nothing was measured: the photo stays as it is
+        shutil.copyfile(imagery_path, out_path)
+        return 0.0
     rgb, tr, res, profile = _grid(imagery_path)
     ch, h, w = rgb.shape
     H = Image.new("F", (w, h), 0.0); draw = ImageDraw.Draw(H)

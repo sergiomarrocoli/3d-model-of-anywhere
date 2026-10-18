@@ -59,6 +59,30 @@ REMOVE_CARS=0 .venv/bin/python modules/builder/server/serve.py                  
 A 300 m box takes about 20 s longer and found 212 cars in Newtown. The count is recorded in the bundle's `meta.json` as
 `cars_removed`. Without `--remove-cars` nothing changes and PyTorch is not needed.
 
+## Fill missing buildings, register the photo
+
+Two optional steps, both off by default, fix problems in the open data. They need LiDAR (a surface model), so they do nothing
+elsewhere and say so in the build log.
+
+```
+.venv/bin/python -m pipeline.build_area --bbox 310450 290880 311450 291880 --id newtown --fill-footprints --register
+```
+
+- `--fill-footprints`: OpenStreetMap is patchy (whole housing estates can be unmapped while the LiDAR plainly shows them).
+  OS Open Map Local buildings are added where OSM has none, leaving out slivers (under 15 m2 or 2 m wide), and kept only
+  if the LiDAR then sees something tall there (`pipeline/footprints.py`). They have no tags, so no levels or materials.
+- `--register`: the aerial photo is taken at an angle, so a roof appears displaced from its footprint by an offset of the whole
+  photo from the OS grid plus its height times a lean. The pipeline measures both and moves everything back
+  (`pipeline/register.py`): the offset from OS road centrelines, the lean from how well footprint outlines sit on the
+  photo's edges (a sample of 250 buildings), then each footprint is moved as one rigid piece by its own shift and the ground
+  a leaned roof had covered is refilled from its surroundings. It writes `imagery_registration` into `meta.json`
+  and sets `imagery_lean` to zero, so a viewer that shifts roofs for the lean (see `modules/map`) does not shift them twice.
+
+In a 1 km box of Newtown: 187 buildings added to OSM's 535 (Open Map Local's `SO` square is a 110 MB download, once), a ground
+offset of (-0.4 m east, +1.5 m north), a lean of (0.35, -0.15) m per metre of height, and 5.6% of the photo refilled. On a
+warm cache the build took 31 s against 14 s without the flags. The lean is fitted per area and assumes one photo capture;
+a roof beyond its footprint (or a building in neither data set) is not corrected.
+
 Design notes and data sources are in [PLAN.md](PLAN.md).
 
 ## Use it from another project
