@@ -29,7 +29,7 @@ KEEP_LOG_LINES = 60
 
 # Rough progress from the pipeline's own log lines: (text it prints, percent, stage name).
 STAGES = [("DTM:", 20, "terrain"), ("Filled", 30, "terrain"), ("Buildings:", 45, "buildings"), ("Buildings after cleanup", 60, "buildings"),
-          ("Imagery fetched", 90, "imagery"), ("Cars removed", 95, "cars"), ("Wrote", 100, "done")]
+          ("Imagery fetched", 90, "imagery"), ("Cars removed", 93, "cars"), ("Land cover", 96, "land cover"), ("Wrote", 100, "done")]
 
 
 class BuildError(ValueError):

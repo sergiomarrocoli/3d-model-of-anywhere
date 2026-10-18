@@ -50,4 +50,11 @@ describe('loadBundle', () => {
     const b = await loadBundle('/x', opts(withSurface));
     expect(Array.from(b.surface.data)).toEqual([0, 1, 2, 3, 4, 5]);
   });
+  it('has no land cover unless the meta declares it, and decodes the class ids when it does', async () => {
+    expect((await loadBundle('/x', opts(files()))).landcover).toBeNull();
+    const land = { file: 'l.png', width: 3, height: 2, resolution_m: 0.5 };
+    const withLand = files({ 'meta.json': JSON.stringify({ ...meta, landcover: land }), 'l.png': encode({ width: 3, height: 2, data: Uint8Array.from([1, 3, 6, 2, 4, 5]), depth: 8, channels: 1 }) });
+    const b = await loadBundle('/x', opts(withLand));
+    expect(Array.from(b.landcover.data)).toEqual([1, 3, 6, 2, 4, 5]); expect(b.landcover.resolution).toBe(0.5);
+  });
 });

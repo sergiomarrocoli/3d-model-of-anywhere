@@ -27,6 +27,24 @@ scene.add(map.object);                                              // terrain, 
 
 Coordinates are world coordinates: X east, Y up (from the lowest ground in the area), Z = -north.
 
+## Land cover (what the ground is)
+
+If the bundle has `landcover.png` (built by `pipeline/landcover.py`), the map answers what is under a point, so a game can decide
+grip, drag or spray itself:
+
+```js
+map.surfaceAt(x, z)        // { id: 3, name: 'grass' }   world X east, Z = -north; the edge cell outside the box
+map.surfaceIdAt(x, z)      // 3: just the id, for per-wheel, per-frame use (nothing is allocated either way)
+map.hasLandcover           // false for a bundle built before land cover; everything is then { id: 0, name: 'unknown' }
+map.showLandcover()        // tint the ground by class (no argument toggles); the viewer does this with ?landcover and the L key
+import { SURFACE, SURFACE_NAMES } from '@map';   // SURFACE.ROAD === 1 ... SURFACE.BUILDING === 7
+```
+
+Classes: 0 unknown, 1 road, 2 paved (pavements, car parks, yards), 3 grass, 4 bare (soil, gravel, rail ballast), 5 tree,
+6 water, 7 building. The map says what the ground is; what that means for a car is the game's table. See
+`pipeline/landcover.py` for how the layer is made (OpenStreetMap lines and areas, LiDAR canopy height, building footprints,
+and a colour guess for what those leave) and its known weak spots.
+
 ## Roofs
 
 The LiDAR surface (DSM) is noisy: tree overhang, chimneys, dormers and a 1-2 m cell, so draping it on a building makes smoothed lumps. Instead

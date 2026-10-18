@@ -2,7 +2,8 @@
 //   modules/picker    pick   choose an area on an open map              -> ctx.bbox
 //   modules/builder   build  ask the build service for it and wait      -> ctx.area, ctx.bundleUrl
 //   view              load the map (modules/map) and fly a free camera round it; the credits (modules/credits) list the sources
-// URLs: /  views the default area;  ?area=<id>  views that one;  ?pick  is ?flow=pick,build,view;  ?debug  inspects a bundle.
+// URLs: /  views the default area;  ?area=<id>  views that one;  ?pick  is ?flow=pick,build,view;  ?debug  inspects a bundle;
+//       ?landcover  tints the ground by land cover (press L to toggle).
 import * as THREE from 'three';
 import { buildStep } from '@builder';
 import { mountCredits } from '@credits';
@@ -22,6 +23,8 @@ async function viewArea(area) {
   const map = await loadMap(`/bundles/area_${area}`, { renderer });
   scene.add(map.object);
   mountCredits($('credits'), map.attribution);
+  if (new URLSearchParams(location.search).has('landcover')) map.showLandcover(true);
+  addEventListener('keydown', (e) => { if (e.key === 'l' || e.key === 'L') map.showLandcover(); });
   const [W, D] = map.size;
 
   const camera = new THREE.PerspectiveCamera(50, 1, 1, 5000);

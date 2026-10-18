@@ -16,7 +16,7 @@ import rasterio
 
 import json
 
-from pipeline import bundle, buildings, cars, clean, dtm, heights, base, imagery, omlocal, terrain_fill, wales_lidar
+from pipeline import bundle, buildings, cars, clean, dtm, heights, base, imagery, landcover, omlocal, terrain_fill, wales_lidar
 
 NRW_ATTRIBUTION = "Contains Natural Resources Wales information © Natural Resources Wales and database right (OGL v3)"
 
@@ -94,8 +94,14 @@ def build_area(bbox, area_id, out_dir="data/bundles", dtm_files=None, dtm_attrib
         summary["cars_removed"] = cars.remove_cars(img, b)
         _log(f"Cars removed: {summary['cars_removed']}")
 
-    # 4. Bundle
-    root = bundle.write_bundle(out_dir, area_id, w / "dtm.tif", img, b, credits, dsm_path)
+    # 4. Land cover (after the cars are gone, so the road under a parked car is seen as road)
+    land = landcover.build_landcover(w / "dtm.tif", img, b, dsm_path, bbox=bbox)
+    share = ", ".join(f"{k} {v:.0%}" for k, v in sorted(land[1]["share"].items(), key=lambda kv: -kv[1]))
+    _log(f"Land cover: {share}" + ("" if land[1]["canopy_from_lidar"] else " (no LiDAR surface, so trees only where OSM maps them)"))
+    summary["landcover"] = land[1]["share"]
+
+    # 5. Bundle
+    root = bundle.write_bundle(out_dir, area_id, w / "dtm.tif", img, b, credits, dsm_path, landcover=land)
     if remove_cars:   # say so in the bundle, so a reader can tell a cleaned build from a plain one
         meta = json.loads((root / "meta.json").read_text())
         meta["cars_removed"] = summary["cars_removed"]
