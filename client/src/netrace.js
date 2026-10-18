@@ -32,7 +32,7 @@ export function waitForTrack(room, signal) {
 /** The host: tell the room the track. */
 export function sendTrack(room, overlay) {
   room.state.host = room.state.id;                      // the server confirms in a moment; we do not wait for it
-  return room.conn.send({ t: 'track', points: overlay.points, lengthM: overlay.lengthM, width: overlay.width });
+  return room.conn.send({ t: 'track', points: overlay.points, lengthM: overlay.lengthM, width: overlay.width, mode: overlay.mode });
 }
 
 /**

@@ -43,8 +43,8 @@ describe('tracks', () => {
   });
   it('the host sends the track and counts itself as the host', () => {
     const { room, sent } = fakeRoom();
-    sendTrack(room, { points: [[0, 0], [1, 1], [2, 0]], lengthM: 9, width: 8, area: 'x' });
-    expect(sent[0]).toEqual({ t: 'track', points: [[0, 0], [1, 1], [2, 0]], lengthM: 9, width: 8 }); expect(room.state.host).toBe('2');
+    sendTrack(room, { points: [[0, 0], [1, 1], [2, 0]], lengthM: 9, width: 8, area: 'x', mode: 'grandprix' });
+    expect(sent[0]).toEqual({ t: 'track', points: [[0, 0], [1, 1], [2, 0]], lengthM: 9, width: 8, mode: 'grandprix' }); expect(room.state.host).toBe('2');
   });
 });
 

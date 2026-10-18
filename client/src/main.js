@@ -44,7 +44,7 @@ async function playGame({ area, overlay = null, game = 'walker', room = null }) 
     setAspect = (a) => { camera.aspect = a; camera.updateProjectionMatrix(); };
     step = (dt) => fly.update(dt);
   } else if (game === 'racer') { // drive the track drawn in the track step
-    racer = startRacer({ map, scene, canvas, track: overlay, showCheckpoints: params.has('debugcheckpoints'), aiCars: Number(params.get('ai')) || 0, online: !!room, selfId: room?.state.id });   // ?debugcheckpoints draws the invisible gates, for debugging
+    racer = startRacer({ map, scene, canvas, track: overlay, showCheckpoints: params.has('debugcheckpoints'), aiCars: Number(params.get('ai')) || 0, online: !!room, selfId: room?.state.id, mode: overlay?.mode ?? raceMode(params) });   // ?debugcheckpoints draws the invisible gates, for debugging
     camera = racer.camera; setAspect = racer.setAspect;
     const net = room ? attachRace(room, racer) : null;
     if (net) showInvite($('players'), params.get('room'), area);
@@ -63,6 +63,9 @@ async function playGame({ area, overlay = null, game = 'walker', room = null }) 
   window.__app = { THREE, scene, camera, renderer, map, walker, racer, presence, overlay, player: walker?.player, meta: map.meta }; // for console poking
   document.title = `civil-war: ${map.meta.id}`;
 }
+
+/** The game mode asked for in the address: ?mode=grandprix is a plain race, anything else is rumble. */
+const raceMode = (params) => (params.get('mode') === 'grandprix' ? 'grandprix' : 'rumble');
 
 /** A box with the room's name and a button that copies the link friends open to join this race. */
 function showInvite(el, room, area) {
@@ -106,11 +109,11 @@ async function main() {
         return finishFlow(ctx, 'racer');                                       // no server: race alone
       }
       let overlay = ctx.overlay;
-      if (overlay?.type === 'track') sendTrack(room, overlay);
+      if (overlay?.type === 'track') { overlay = { ...overlay, mode: raceMode(params) }; sendTrack(room, overlay); }
       else {
         host.root.className = 'track-page'; host.root.innerHTML = `<div class="track-loading">Waiting for the host of room ${roomName} to draw a track…</div>`;
         const t = await waitForTrack(room, host.signal);
-        overlay = { type: 'track', closed: true, points: t.points, lengthM: t.lengthM, area: ctx.area ?? null, width: t.width };
+        overlay = { type: 'track', closed: true, points: t.points, lengthM: t.lengthM, area: ctx.area ?? null, width: t.width, mode: t.mode };
         host.root.innerHTML = ''; host.root.className = '';
       }
       return finishFlow({ ...ctx, overlay, room }, 'racer');
