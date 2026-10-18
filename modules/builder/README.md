@@ -7,7 +7,10 @@ someone running `build_area.py` by hand. It wraps the Python pipeline (`pipeline
 python3 modules/builder/server/serve.py        # http://127.0.0.1:8788   (HOST / PORT to change)
 ```
 
-`REMOVE_CARS=1 python3 modules/builder/server/serve.py` also paints parked cars out of the imagery of every build (see `pipeline/cars.py`; install `pipeline/requirements-cars.txt` into the Python that runs the service).
+The service paints parked cars out of the imagery of every build (`pipeline/cars.py`) when the detector is installed in the Python
+that runs it (`pip install -r pipeline/requirements-cars.txt`). Without the detector it starts anyway and builds without that step; the start-up
+line says which. `REMOVE_CARS=0` turns the step off, and `REMOVE_CARS=1` without the detector refuses to start. Bundles built before this (pipeline
+version 4 or older) are stale, so the service rebuilds them the next time they are asked for; `meta.json` says `cars_removed` for the ones built with the step.
 
 The dev server forwards `/api` to it (`client/vite.config.js`), so with both running the game page can call `/api/builds`.
 

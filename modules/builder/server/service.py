@@ -86,6 +86,19 @@ class Job:
         return d
 
 
+def cars_setting(env_value, detector_installed):
+    """(remove cars?, note) for the build service: on by default when the detector is installed, REMOVE_CARS=0 turns it off, and
+    asking for it (REMOVE_CARS=1) without the detector is an error rather than a silent skip."""
+    asked = (env_value or "").strip().lower()
+    if asked in ("0", "false", "no", "off"):
+        return False, "kept (REMOVE_CARS=0)"
+    if detector_installed:
+        return True, "removed"
+    if asked:
+        raise RuntimeError("REMOVE_CARS is set but the car detector is not installed: pip install -r pipeline/requirements-cars.txt")
+    return False, "kept (detector not installed: pip install -r pipeline/requirements-cars.txt)"
+
+
 def subprocess_runner(root, python=sys.executable, timeout=BUILD_TIMEOUT_S, remove_cars=False):
     """Run the real pipeline. `on_line` gets each log line as it appears; raises if the build fails or times out."""
     def run(box, id, out_dir, on_line):

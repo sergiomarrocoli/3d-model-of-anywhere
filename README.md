@@ -37,7 +37,7 @@ Parked cars photographed from above end up flat on the road, so the pipeline can
 ```
 .venv/bin/pip install -U pip && .venv/bin/pip install -r pipeline/requirements-cars.txt   # PyTorch comes with it; needs pip 22 or newer
 .venv/bin/python -m pipeline.build_area --bbox 310725 291125 311025 291425 --id newtown-clean --remove-cars
-REMOVE_CARS=1 .venv/bin/python modules/builder/server/serve.py                           # the build service, for every build
+REMOVE_CARS=0 .venv/bin/python modules/builder/server/serve.py                           # the build service removes cars by default once the detector is installed; 0 turns it off
 ```
 
 A 300 m box takes about 20 s longer and found 212 cars in Newtown. The count is recorded in the bundle's `meta.json` as
