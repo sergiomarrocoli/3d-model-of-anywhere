@@ -32,7 +32,7 @@ export function waitForTrack(room, signal) {
 /** The host: tell the room the track. */
 export function sendTrack(room, overlay) {
   room.state.host = room.state.id;                      // the server confirms in a moment; we do not wait for it
-  return room.conn.send({ t: 'track', points: overlay.points, lengthM: overlay.lengthM, width: overlay.width, mode: overlay.mode });
+  return room.conn.send({ t: 'track', points: overlay.points, lengthM: overlay.lengthM, width: overlay.width, mode: overlay.mode, damage: overlay.damage === true });
 }
 
 /**
@@ -49,12 +49,14 @@ export function attachRace(room, racer) {
   racer.setColour(state.colour ?? '#e03030');
   sync();
   racer.onEvent = ({ k, d }) => conn.send({ t: 'ctl', k, d });
+  racer.onBoom = () => conn.send({ t: 'boom' });
   for (const p of state.peers.values()) racer.addRemote(p.id, { name: p.name, colour: p.colour });       // everyone already here (they may still be loading: the host sorts that out)
 
   const off = room.on((m) => {
     if (m.t === 'ready') { racer.addRemote(m.id, { name: peer(m.id).name, colour: peer(m.id).colour }); if (isHost()) racer.hostRestart(); }
     else if (m.t === 'car') { if (!racer.field.some((f) => f.id === m.id)) racer.addRemote(m.id, { name: peer(m.id).name, colour: peer(m.id).colour }); racer.setRemote(m.id, m); }
     else if (m.t === 'ctl') racer.applyEvent(m.k, m.d ?? {});
+    else if (m.t === 'boom') racer.applyBoom(m.id);
     else if (m.t === 'bye') { racer.removeRemote(m.id); if (isHost()) racer.hostRestart(); }
     else if (m.t === 'host') { const was = racer.isHost; sync(); if (isHost() && !was) racer.hostRestart(); }      // the host left and it is our turn
   });
@@ -67,7 +69,7 @@ export function attachRace(room, racer) {
       if (sendT < 1 / CAR_SEND_HZ || !racer.canSend) return;
       sendT = 0;
       const s = racer.snapshot();
-      conn.send({ t: 'car', x: r2(s.x), z: r2(s.z), h: +s.h.toFixed(3), vx: r2(s.vx), vz: r2(s.vz), s: +s.s.toFixed(3) });
+      conn.send({ t: 'car', x: r2(s.x), z: r2(s.z), h: +s.h.toFixed(3), vx: r2(s.vx), vz: r2(s.vz), s: +s.s.toFixed(3), d: +s.d.toFixed(2) });
     },
     dispose() { off(); conn.close(); },
   };
