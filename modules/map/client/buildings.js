@@ -110,8 +110,8 @@ export function addWallPatchwork(material, { patchM = WALL_PATCH_M, variation = 
     shader.uniforms.uVariation = { value: variation };
     shader.uniforms.uMottle = { value: mottle };
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec2 wallDetail;\nattribute vec4 wallEdge;\nattribute vec4 wallFacade;\nattribute vec4 wallLook;\nattribute vec4 wallTint;\nvarying vec2 vWallDetail;\nvarying vec4 vWallEdge;\nvarying vec4 vFacade;\nvarying vec4 vLook;\nvarying vec4 vTint;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWallDetail = wallDetail;\nvWallEdge = wallEdge;\nvFacade = wallFacade;\nvLook = wallLook;\nvTint = wallTint;');
+      .replace('#include <common>', '#include <common>\nattribute vec2 wallDetail;\nattribute vec4 wallEdge;\nattribute vec4 wallFacade;\nattribute vec4 wallLook;\nattribute vec4 wallTint;\nattribute float wallDamage;\nvarying float vDamage;\nvarying vec2 vWallDetail;\nvarying vec4 vWallEdge;\nvarying vec4 vFacade;\nvarying vec4 vLook;\nvarying vec4 vTint;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWallDetail = wallDetail;\nvWallEdge = wallEdge;\nvFacade = wallFacade;\nvLook = wallLook;\nvTint = wallTint;\nvDamage = wallDamage;');
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>
         varying vec2 vWallDetail;
@@ -119,6 +119,7 @@ export function addWallPatchwork(material, { patchM = WALL_PATCH_M, variation = 
         varying vec4 vFacade;   // base elevation, wall top elevation at this column, wall length, floor height
         varying vec4 vLook;     // material, window style, seed, shopfront
         varying vec4 vTint;     // tagged colour rgb, strength
+        varying float vDamage;  // 0 sound .. 1 about to fall
         uniform float uPatchM;
         uniform float uVariation;
         uniform float uMottle;
@@ -138,10 +139,18 @@ export function addWallPatchwork(material, { patchM = WALL_PATCH_M, variation = 
         float wallMottleN = wallNoise(wallP * 3.1 + 17.0) * 0.6 + wallNoise(wallP * 7.3 + 5.0) * 0.4;
         vec3 wallCol = mix(wallMean, wallPick, uVariation) * (1.0 + uMottle * (wallMottleN * 2.0 - 1.0) * 1.6);
         ${FACADE_GLSL}
+        if (vDamage > 0.01) {                                                        // damage: soot, cracks and holes, more with more damage
+          float n1 = wallNoise(vWallDetail * 0.8 + 31.0), n2 = wallNoise(vWallDetail * vec2(2.7, 2.3) + 7.0), n3 = wallNoise(vWallDetail * 6.0 + 3.0);
+          float crack = (1.0 - smoothstep(0.0, 0.035, abs(n1 - 0.5))) * smoothstep(0.15, 0.6, vDamage);
+          float hole = smoothstep(0.64, 0.72, n2 * 0.75 + n3 * 0.25) * smoothstep(0.4, 0.85, vDamage);
+          float soot = (0.25 + 0.5 * n2) * vDamage + (1.0 - smoothstep(0.0, 3.0, vWallDetail.y - vFacade.x)) * 0.25 * vDamage;
+          wallCol = mix(wallCol, wallCol * 0.3, clamp(soot, 0.0, 0.85));
+          wallCol = mix(wallCol, vec3(0.015, 0.012, 0.012), max(crack * 0.8, hole * 0.95));
+        }
         vec4 sampledDiffuseColor = vec4(wallCol, 1.0);
         diffuseColor *= sampledDiffuseColor;`);
   };
-  material.customProgramCacheKey = () => 'wallfacade4';
+  material.customProgramCacheKey = () => 'walldamage1';
   material.needsUpdate = true;
 }
 
@@ -252,11 +261,13 @@ export function buildBuildingGeometry(meta, buildings, surface = null) {
   const [W, H] = meta.size_m;
   const wp = [], wn = [], wuv = [], wdt = [], wedge = [], wi = [], wfac = [], wlook = [], wtint = [];
   const rp = [], rn = [], ruv = [], ri = [];
+  const ranges = [];                                   // where each building's vertices and triangles are in the two merged meshes (see destruction.js)
 
-  for (const f of buildings.features) {
+  for (const [featureIndex, f] of buildings.features.entries()) {
     if (f.geometry?.type !== 'Polygon') continue;
     const rings = normaliseRings(f.geometry.coordinates);
     if (!rings.length) continue;
+    const start = { wallV: wp.length / 3, wallI: wi.length, roofV: rp.length / 3, roofI: ri.length };
     const base = f.properties.base_z ?? meta.heightmap.min;
     const height = f.properties.height ?? DEFAULT_HEIGHT_M;
     const flatTop = base + height;
@@ -375,6 +386,7 @@ export function buildBuildingGeometry(meta, buildings, surface = null) {
       }
       for (const [a, b, c] of tris) upFace(k0 + a, k0 + b, k0 + c, a, b, c);
     }
+    ranges.push({ id: featureIndex, wallV: [start.wallV, wp.length / 3], wallI: [start.wallI, wi.length], roofV: [start.roofV, rp.length / 3], roofI: [start.roofI, ri.length], base, height });
   }
 
   const make = (p, n, uv, idx) => {
@@ -391,17 +403,21 @@ export function buildBuildingGeometry(meta, buildings, surface = null) {
   wallGeo.setAttribute('wallFacade', new THREE.Float32BufferAttribute(wfac, 4));
   wallGeo.setAttribute('wallLook', new THREE.Float32BufferAttribute(wlook, 4));
   wallGeo.setAttribute('wallTint', new THREE.Float32BufferAttribute(wtint, 4));
-  return { walls: wallGeo, roofs: make(rp, rn, ruv, ri) };
+  wallGeo.setAttribute('wallDamage', new THREE.Float32BufferAttribute(new Float32Array(wp.length / 3), 1));      // 0 (sound) to 1 (about to fall), per building: see destruction.js
+  const roofGeo = make(rp, rn, ruv, ri);
+  roofGeo.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(rp.length).fill(1), 3));        // white, darkened by damage
+  return { walls: wallGeo, roofs: roofGeo, ranges };
 }
 
 export function buildBuildings(meta, buildings, imageryTex, surface = null, renderer = null) {
-  const { walls, roofs } = buildBuildingGeometry(meta, buildings, surface);
+  const { walls, roofs, ranges } = buildBuildingGeometry(meta, buildings, surface);
   const group = new THREE.Group(); group.name = 'buildings';
   const wallMat = new THREE.MeshLambertMaterial({ map: imageryTex, color: new THREE.Color().setRGB(WALL_BRIGHTNESS, WALL_BRIGHTNESS, WALL_BRIGHTNESS, THREE.SRGBColorSpace) });
   addWallPatchwork(wallMat);
   const wallMesh = new THREE.Mesh(walls, wallMat);
-  const roofMesh = new THREE.Mesh(roofs, new THREE.MeshBasicMaterial({ map: imageryTex, side: THREE.DoubleSide }));
+  const roofMesh = new THREE.Mesh(roofs, new THREE.MeshBasicMaterial({ map: imageryTex, side: THREE.DoubleSide, vertexColors: true }));
   wallMesh.name = 'walls'; roofMesh.name = 'roofs';
   group.add(wallMesh, roofMesh);
+  group.userData = { wallMesh, roofMesh, ranges };          // what destruction.js needs to take a building apart
   return group;
 }

@@ -50,6 +50,7 @@ export function attachRace(room, racer) {
   sync();
   racer.onEvent = ({ k, d }) => conn.send({ t: 'ctl', k, d });
   racer.onBoom = () => conn.send({ t: 'boom' });
+  racer.onBuildingHit = ({ id, amount }) => conn.send({ t: 'bld', b: id, a: +amount.toFixed(1) });
   for (const p of state.peers.values()) racer.addRemote(p.id, { name: p.name, colour: p.colour });       // everyone already here (they may still be loading: the host sorts that out)
 
   const off = room.on((m) => {
@@ -57,6 +58,7 @@ export function attachRace(room, racer) {
     else if (m.t === 'car') { if (!racer.field.some((f) => f.id === m.id)) racer.addRemote(m.id, { name: peer(m.id).name, colour: peer(m.id).colour }); racer.setRemote(m.id, m); }
     else if (m.t === 'ctl') racer.applyEvent(m.k, m.d ?? {});
     else if (m.t === 'boom') racer.applyBoom(m.id);
+    else if (m.t === 'bld') racer.applyBuildingHit(m.b, m.a);
     else if (m.t === 'bye') { racer.removeRemote(m.id); if (isHost()) racer.hostRestart(); }
     else if (m.t === 'host') { const was = racer.isHost; sync(); if (isHost() && !was) racer.hostRestart(); }      // the host left and it is our turn
   });

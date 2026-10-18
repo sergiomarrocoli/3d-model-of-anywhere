@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildCollisionGrid, resolveCircle, insideBuilding } from '../collision.js';
+import { buildCollisionGrid, resolveCircle, insideBuilding, buildingsNear, insideRubble, removeBuilding, restoreBuildings, buildingEntry } from '../collision.js';
 
 const sq = (x0, y0, x1, y1) => [[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]];
 const fc = (...polys) => ({ features: polys.map((coordinates) => ({ geometry: { type: 'Polygon', coordinates: [coordinates] } })) });
@@ -43,5 +43,28 @@ describe('collision', () => {
     for (let i = 0; i < 10000; i++) resolveCircle(many, 15 + (i % 900), 15 + ((i * 7) % 700), R);
     expect(performance.now() - t).toBeLessThan(500);
     expect(resolveCircle(many, 15, 15, R)).toEqual({ x: 15, y: 15 }); // in the gap between blocks
+  });
+});
+
+describe('destroyed buildings', () => {
+  const grid = () => buildCollisionGrid({ features: [{ geometry: { type: 'Point', coordinates: [0, 0] } }, { geometry: { type: 'Polygon', coordinates: [sq(10, 10, 20, 20)] } }, { geometry: { type: 'Polygon', coordinates: [sq(40, 10, 50, 20)] } }] });
+  it('ids are the building\'s place in the feature list, whatever came before it', () => {
+    const g = grid(); expect(g.polys.map((p) => p.id)).toEqual([1, 2]); expect(buildingEntry(g, 2).minX).toBe(40); expect(buildingEntry(g, 0)).toBeUndefined();
+  });
+  it('finds the standing buildings near a point, nearest first, with the distance to the wall', () => {
+    const g = grid(), near = buildingsNear(g, 15, 15, 40);
+    expect(near.map((n) => n.id)).toEqual([1, 2]); expect(near[0].d).toBe(0);                    // inside the first
+    expect(near[1].d).toBeCloseTo(25);                                                            // 25 m from the second's wall
+    expect(buildingsNear(g, 15, 15, 10).map((n) => n.id)).toEqual([1]); expect(buildingsNear(g, 100, 100, 10)).toEqual([]);
+    expect(buildingsNear(g, 25, 15, 6)[0]).toEqual({ id: 1, d: 5 });
+  });
+  it('a removed building no longer blocks anything, is found as rubble instead, and can be put back', () => {
+    const g = grid(); expect(insideBuilding(g, 15, 15)).toBe(true); expect(insideRubble(g, 15, 15)).toBe(false);
+    expect(removeBuilding(g, 1)).toBe(true); expect(removeBuilding(g, 1)).toBe(false);              // only once
+    expect(insideBuilding(g, 15, 15)).toBe(false); expect(insideRubble(g, 15, 15)).toBe(true); expect(insideRubble(g, 45, 15)).toBe(false);
+    expect(resolveCircle(g, 9.8, 15, R)).toEqual({ x: 9.8, y: 15 });                                  // walk straight through where the wall was
+    expect(buildingsNear(g, 15, 15, 5)).toEqual([]);
+    expect(insideBuilding(g, 45, 15)).toBe(true);                                                     // the other building is untouched
+    restoreBuildings(g); expect(insideBuilding(g, 15, 15)).toBe(true); expect(insideRubble(g, 15, 15)).toBe(false);
   });
 });
