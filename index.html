@@ -3,14 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>civil-war</title>
+  <title>uk-map-3d</title>
   <style>
     html, body { margin: 0; height: 100%; background: #14161a; color: #e6e6e6; font: 14px/1.4 system-ui, sans-serif; }
     #scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
     #hud { position: fixed; top: 8px; left: 12px; text-shadow: 0 0 4px #000; }
-    #players { position: fixed; top: 8px; right: 12px; text-align: right; text-shadow: 0 0 4px #000; font-size: 12px; max-width: 45vw; }
-    #players .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: baseline; }
-    #players button { font: inherit; font-size: 11px; margin-left: 6px; }
     #error { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 24px; font-size: 16px; color: #f0b429; pointer-events: none; }
     #error[hidden] { display: none; }
     #credits { position: fixed; bottom: 6px; left: 12px; right: 12px; font-size: 11px; text-shadow: 0 0 4px #000; }
@@ -26,7 +23,6 @@
   <div id="flow" hidden></div>
   <canvas id="scene"></canvas>
   <div id="hud"><div id="areas"></div></div>
-  <div id="players" hidden></div>
   <div id="error" hidden></div>
   <div id="credits"></div>
   <pre id="summary" hidden></pre>

@@ -70,7 +70,7 @@ class XYZTileSource(ImagerySource):
         url = self.url_template.format(z=self.zoom, x=x, y=y)
         for attempt in range(3):
             try:
-                r = requests.get(url, timeout=30, headers={"User-Agent": "civil-war-prototype"})
+                r = requests.get(url, timeout=30, headers={"User-Agent": "uk-map-3d"})
                 r.raise_for_status()
                 return np.asarray(Image.open(io.BytesIO(r.content)).convert("RGB"))
             except (requests.RequestException, OSError):

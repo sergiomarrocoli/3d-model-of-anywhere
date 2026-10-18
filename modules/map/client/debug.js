@@ -41,6 +41,6 @@ export async function debugMain() {
   const px = g2.createImageData(heightmap.width, heightmap.height);
   heightmap.data.forEach((v, i) => { const g = ((v - zmin) / (zmax - zmin || 1)) * 255; px.data.set([g, g, g, 255], i * 4); });
   g2.putImageData(px, 0, 0);
-  document.title = `civil-war: ${meta.id}`;
+  document.title = `uk-map-3d: ${meta.id}`;
   window.__bundle = { meta, heightmap, buildings }; // for console poking
 }

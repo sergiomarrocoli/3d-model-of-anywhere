@@ -75,7 +75,7 @@ map.restoreBuildings()                         // everything back as it was (a n
   then sinks to a heap in a cloud of pixel dust and flying debris (`COLLAPSE_S`, 1.8 s), and leaves a pile of rubble boxes on an ash-dark patch that covers the roof still showing in the aerial photo.
 - **Collision.** The building leaves the collision grid at the moment it starts to go: people and cars pass through it. The rubble slows them (`RUBBLE_SLOWDOWN`, folded into `slopeSpeedFactor`); `map.rubbleAt(x, z)` says where it is.
 - **Built from** `collision.js` (ids, `removeBuilding`, `restoreBuildings`, `buildingsNear`, `insideRubble`) and `destruction.js` (`createDestruction`, which `createMap` calls); the unit tests are `test/destruction.test.js`.
-  The mortars, crashes and explosions that call it belong to the games; the racer's are in its README.
+  The mortars, crashes and explosions that call it belong to the games (the `civil-war` repository).
 
 ### Facades (walls)
 

@@ -86,7 +86,7 @@ def _overpass(query, cache_dir=None, ttl=None):
         for url in OVERPASS_URLS:
             try:
                 resp = requests.post(url, data={"data": query}, timeout=90,
-                                     headers={"User-Agent": "civil-war-prototype (github.com/sergiomarrocoli/civil-war)"})
+                                     headers={"User-Agent": "uk-map-3d (github.com/sergiomarrocoli/uk-map-3d)"})
                 resp.raise_for_status()
                 resp.json()
                 cache_dir.mkdir(parents=True, exist_ok=True)

@@ -23,7 +23,7 @@ MAX_BODY = 2048
 
 def make_handler(service):
     class Handler(BaseHTTPRequestHandler):
-        server_version = "civil-war-builder"
+        server_version = "uk-map-3d-builder"
 
         def log_message(self, fmt, *args):  # quiet by default
             if os.environ.get("BUILDER_LOG"):

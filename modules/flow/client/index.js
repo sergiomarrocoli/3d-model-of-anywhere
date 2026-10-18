@@ -16,9 +16,10 @@ export class FlowError extends Error {}
 export const DEFAULT_FLOW = ['play'];
 export const PICK_FLOW = ['pick', 'build', 'play'];
 
-/** Which steps to run, from the page URL: ?flow=pick,track,build,play  or the shortcut ?pick  or just play. */
-export function parseFlow(params, known) {
-  const list = params.get('flow') ? params.get('flow').split(',').map((s) => s.trim()).filter(Boolean) : params.has('pick') ? PICK_FLOW : DEFAULT_FLOW;
+/** Which steps to run, from the page URL: ?flow=pick,track,build,play  or the shortcut ?pick  or just play. A program with other
+ *  final steps passes its own defaults, e.g. { default: ['view'], pick: ['pick', 'build', 'view'] }. */
+export function parseFlow(params, known, { default: normal = DEFAULT_FLOW, pick = PICK_FLOW } = {}) {
+  const list = params.get('flow') ? params.get('flow').split(',').map((s) => s.trim()).filter(Boolean) : params.has('pick') ? pick : normal;
   const unknown = list.filter((n) => !known.includes(n));
   if (unknown.length) throw new FlowError(`unknown step ${unknown.map((n) => `"${n}"`).join(', ')} (available: ${known.join(', ')})`);
   if (!list.length) throw new FlowError('the flow has no steps');

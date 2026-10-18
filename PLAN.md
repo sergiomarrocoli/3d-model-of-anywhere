@@ -68,7 +68,7 @@ This is the hardest source to get. At this camera height you need roughly **25â€
 
 ### Modules
 
-The game is split into modules in `modules/` (`map`, `walker`, `presence`, more to come) that a thin shell in `client/` plugs together; each has a `client/` half, optionally a `server/` half, its own tests and a README. See `modules/README.md`. Planned: an area picker, a builder service, a track drawer and a racing game module.
+The engine is split into modules in `modules/` (`map`, `picker`, `builder`, `credits`, `flow`) that a thin viewer in `src/` plugs together; each has a `client/` half, optionally a `server/` half, its own tests and a README. See `modules/README.md`. The games (walker, racer, track drawer, multiplayer) live in the `civil-war` repository and use this one as a package.
 
 ### Stack
 

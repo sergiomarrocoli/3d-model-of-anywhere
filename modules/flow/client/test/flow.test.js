@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_FLOW, FlowError, PICK_FLOW, parseFlow, runFlow, urlAfterBuild } from '../src/flow.js';
+import { DEFAULT_FLOW, FlowError, PICK_FLOW, parseFlow, runFlow, urlAfterBuild } from '../index.js';
 
 const known = ['pick', 'build', 'track', 'play'];
 const q = (s) => new URLSearchParams(s);
 
 describe('parseFlow', () => {
+  it('takes the program\'s own default and ?pick flows', () => {
+    const own = { default: ['view'], pick: ['pick', 'build', 'view'] };
+    expect(parseFlow(q(''), ['view', 'pick', 'build'], own)).toEqual(['view']);
+    expect(parseFlow(q('?pick'), ['view', 'pick', 'build'], own)).toEqual(['pick', 'build', 'view']);
+  });
+
   it('defaults to just playing, ?pick gives pick,build,play, ?flow= is explicit', () => {
     expect(parseFlow(q(''), known)).toEqual(DEFAULT_FLOW); expect(DEFAULT_FLOW).toEqual(['play']);
     expect(parseFlow(q('?pick'), known)).toEqual(PICK_FLOW); expect(PICK_FLOW).toEqual(['pick', 'build', 'play']);
