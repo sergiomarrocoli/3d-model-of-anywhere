@@ -30,6 +30,10 @@ $ curl localhost:8788/api/builds/e310700n291125w500h500
 {"status":"building","percent":60,"stage":"buildings",...}   ->   {"status":"ready","percent":100,"bundle":"/bundles/area_e310700n291125w500h500/"}
 ```
 
+## What a build includes
+
+Each area is built with the pipeline's three optional steps on: OS Open Map Local buildings are added where OSM has none (`--fill-footprints`: OSM leaves whole streets unmapped, and a house with no footprint has no 3D model), the aerial photo is fitted to the grid and the LiDAR so roofs line up with their outlines (`--register`), and parked cars are painted out of the photo when the detector is installed. The service says which are on in its first line. `FILL_FOOTPRINTS=0`, `REGISTER_IMAGERY=0` and `REMOVE_CARS=0` turn them off. The first build in a new 100 km grid square downloads that square's Open Map Local file (40 to 120 MB, once, shown on the build screen). Both of the first two need LiDAR (England and Wales); elsewhere they say so in the log and do nothing.
+
 ## Where areas are written
 
 `data/bundles` in this checkout, or `BUNDLES_DIR=/path` to write them where a game serves them from (civil-war's `bin/cars` sets it to its own `data/bundles`; without it the game would look for the finished area in its own folder and get a 404). The service prints the folder at start.

@@ -100,6 +100,11 @@ class Job:
         return d
 
 
+def on_unless_off(env_value):
+    """A setting that is on unless it is explicitly turned off (0, false, no, off): FILL_FOOTPRINTS and REGISTER_IMAGERY."""
+    return (env_value or "").strip().lower() not in ("0", "false", "no", "off")
+
+
 def cars_setting(env_value, detector_installed):
     """(remove cars?, note) for the build service: on by default when the detector is installed, REMOVE_CARS=0 turns it off, and
     asking for it (REMOVE_CARS=1) without the detector is an error rather than a silent skip."""
@@ -113,12 +118,16 @@ def cars_setting(env_value, detector_installed):
     return False, "kept (detector not installed: pip install -r pipeline/requirements-cars.txt)"
 
 
-def subprocess_runner(root, python=sys.executable, timeout=BUILD_TIMEOUT_S, remove_cars=False):
+def subprocess_runner(root, python=sys.executable, timeout=BUILD_TIMEOUT_S, remove_cars=False, fill_footprints=False, register=False):
     """Run the real pipeline. `on_line` gets each log line as it appears; raises if the build fails or times out."""
     def run(box, id, out_dir, on_line):
         cmd = [python, "-m", "pipeline.build_area", "--bbox", *[str(v) for v in box], "--id", id, "--out", str(out_dir)]
         if remove_cars:
             cmd.append("--remove-cars")
+        if fill_footprints:      # Open Map Local buildings where OSM has none (kept only where the LiDAR sees them)
+            cmd.append("--fill-footprints")
+        if register:             # the photo fitted to the grid and the LiDAR (needs a LiDAR surface; it says so and does nothing without)
+            cmd.append("--register")
         proc = subprocess.Popen(cmd, cwd=str(root), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
         timer = threading.Timer(timeout, proc.kill)
         timer.start()
