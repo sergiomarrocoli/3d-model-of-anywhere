@@ -2,7 +2,9 @@
 
 export const DEFAULT_SIZE_M = 1000;
 export const MIN_SIZE_M = 200;
-export const MAX_SIZE_M = 2000;
+export const MAX_SIZE_M = 2000;            // the largest square: a box made from one size (makeBox) is at most this
+export const MAX_EDGE_M = 4000;            // the longest a side can be: the imagery texture stays under the usual 16384 px GPU limit (0.25 m per pixel)
+export const MAX_AREA_M2 = 4_000_000;      // ...and the box can be any shape inside this area (2 x 2 km, 4 x 1 km...): the same imagery and terrain budget as a 2 km square
 export const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -32,14 +34,26 @@ export function handlePosition(b, handle) {
 
 /**
  * Drag a handle to the grid point (E, N). The edges that handle controls follow the pointer; the opposite edges stay put.
- * Each edge stops when the box would be smaller than `min` or larger than `max`, so the pointer can keep going while the box holds.
+ * Each edge stops when the box would be smaller than `min` or longer than `max`, and the box stops at `maxArea`: a corner
+ * drag that would go over scales both sides down together, an edge drag stops where the area runs out. The pointer can keep
+ * going while the box holds.
  */
-export function resizeBox(b, handle, E, N, { min = MIN_SIZE_M, max = MAX_SIZE_M } = {}) {
+export function resizeBox(b, handle, E, N, { min = MIN_SIZE_M, max = MAX_EDGE_M, maxArea = MAX_AREA_M2 } = {}) {
   const r = { ...b };
   if (handle.includes('w')) r.minE = clamp(E, b.maxE - max, b.maxE - min);
   if (handle.includes('e')) r.maxE = clamp(E, b.minE + min, b.minE + max);
   if (handle.includes('s')) r.minN = clamp(N, b.maxN - max, b.maxN - min);
   if (handle.includes('n')) r.maxN = clamp(N, b.minN + min, b.minN + max);
+  const { width, height } = boxSize(r);
+  if (width * height > maxArea) {
+    const dragW = handle.includes('w') || handle.includes('e'), dragH = handle.includes('n') || handle.includes('s');
+    let w = width, h = height;
+    if (dragW && dragH) { const f = Math.sqrt(maxArea / (width * height)); w = Math.max(min, width * f); h = Math.max(min, Math.min(height, maxArea / w)); }
+    else if (dragW) w = Math.max(min, maxArea / height);
+    else h = Math.max(min, maxArea / width);
+    if (handle.includes('w')) r.minE = r.maxE - w; else if (handle.includes('e')) r.maxE = r.minE + w;
+    if (handle.includes('s')) r.minN = r.maxN - h; else if (handle.includes('n')) r.maxN = r.minN + h;
+  }
   return r;
 }
 

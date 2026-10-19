@@ -1,7 +1,7 @@
 # Picker module
 
 Choose an area on an open map. MapLibre shows OpenStreetMap tiles; on it sits a box you drag to move and resize with eight
-handles, from 0.2 to 2 km a side (default 1 km). The box is kept in British National Grid metres, so it is exactly the
+handles, from 0.2 to 4 km a side and up to 4 km² in all, so any shape from 2 × 2 km to 4 × 1 km (default 1 km square). A corner drag past the limit scales both sides down together; an edge drag stops where the area runs out. The box is kept in British National Grid metres, so it is exactly the
 rectangle the map builder will build.
 
 ```
