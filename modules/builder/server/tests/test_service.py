@@ -187,6 +187,26 @@ class TestBuilds:
             s.request(mk(40), "late")
         gate.set(); assert s.wait_idle(15)
 
+    def test_a_job_says_how_long_it_has_been_building(self, tmp_path):
+        now = [1000.0]; gate = threading.Event(); holder = {}
+
+        def runner(box, id, out, on_line):
+            holder["id"] = id
+            gate.wait(5)
+            d = out / f"area_{id}"; d.mkdir(parents=True)
+            (d / "meta.json").write_text(json.dumps({"pipeline_version": V}))
+        s = BuildService(tmp_path, runner, V, clock=lambda: now[0])
+        j = s.request(BOX)
+        for _ in range(100):
+            if j.started_at is not None: break
+            time.sleep(0.02)
+        now[0] += 95.5
+        assert j.public()["elapsed_s"] == 95.5                                           # a screen that joined late shows the real time
+        gate.set(); assert s.wait_idle()
+        now[0] += 500
+        assert j.public()["elapsed_s"] < 600 and j.public()["status"] == "ready"          # and it stops counting when the build is over
+        assert j.public()["elapsed_s"] == round(j.finished_at - j.started_at, 1)
+
     def test_a_build_that_writes_nothing_is_an_error(self, make, tmp_path):
         s = BuildService(tmp_path, lambda box, id, out, on_line: None, V)
         j = s.request(BOX); assert s.wait_idle() and j.status == "error" and "no bundle" in j.error

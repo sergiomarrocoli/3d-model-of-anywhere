@@ -82,8 +82,9 @@ valid_id = lambda s: bool(_ID_RE.match(str(s)))
 
 
 class Job:
-    def __init__(self, id, box, client):
-        self.id, self.box, self.client = id, box, client
+    def __init__(self, id, box, client, clock=time.time):
+        self.id, self.box, self.client, self.clock = id, box, client, clock
+        self.started_at = None           # when it began building (the service's clock)
         self.status = "queued"           # queued | building | ready | error
         self.percent, self.stage, self.error = 0, "waiting", None
         self.log = []
@@ -92,6 +93,8 @@ class Job:
     def public(self, queue_position=None):
         d = {"id": self.id, "status": self.status, "bbox": list(self.box), "percent": self.percent, "stage": self.stage,
              "error": self.error, "log": self.log[-8:], "bundle": f"/bundles/area_{self.id}/" if self.status == "ready" else None}
+        if self.started_at is not None:       # how long the build has been running (or took), so a screen that joined late shows the real time
+            d["elapsed_s"] = round((self.finished_at or self.clock()) - self.started_at, 1)
         if queue_position is not None:
             d["queue_position"] = queue_position
         return d
@@ -156,7 +159,7 @@ class BuildService:
             job = self.jobs.get(id)
             if self.cached(id):
                 if job is None or job.status != "ready":
-                    job = self.jobs[id] = Job(id, box, client)
+                    job = self.jobs[id] = Job(id, box, client, self.clock)
                     job.status, job.percent, job.stage = "ready", 100, "done"
                 return job
             if job and job.status in ("queued", "building"):
@@ -168,7 +171,7 @@ class BuildService:
                 raise BuildError("the build queue is full, try again in a few minutes")
             if sum(j.client == client for j in active) >= MAX_PER_CLIENT:
                 raise BuildError("you already have builds in progress; wait for one to finish")
-            job = self.jobs[id] = Job(id, box, client)
+            job = self.jobs[id] = Job(id, box, client, self.clock)
             self.q.put(id)
             self._ensure_worker()
             return job
@@ -179,7 +182,7 @@ class BuildService:
             if job is None and valid_id(id) and self.cached(id):     # built before this server started
                 m = re.match(r"e(\d+)n(\d+)w(\d+)h(\d+)", id)
                 e, n, w, h = map(int, m.groups())
-                job = self.jobs[id] = Job(id, (e, n, e + w, n + h), "anon")
+                job = self.jobs[id] = Job(id, (e, n, e + w, n + h), "anon", self.clock)
                 job.status, job.percent, job.stage = "ready", 100, "done"
             return job
 
@@ -204,7 +207,7 @@ class BuildService:
             id = self.q.get()   # blocks; the worker is a daemon thread that lives as long as the server
             with self.lock:
                 job = self.jobs[id]
-                job.status, job.stage = "building", "starting"
+                job.status, job.stage, job.started_at = "building", "starting", self.clock()
             try:
                 self.runner(job.box, id, self.bundles_dir, lambda line, j=job: self._on_line(j, line))
                 if not self.cached(id):
