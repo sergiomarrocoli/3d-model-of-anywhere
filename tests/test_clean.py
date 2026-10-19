@@ -27,3 +27,12 @@ def test_keeps_attributes_and_crs():
     g = _gdf([Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])])
     out = clean_buildings(g)
     assert list(out.columns) == ["id", "geometry"] and out.crs == g.crs
+
+
+def test_footprints_come_out_flat_whatever_they_went_in_as():
+    # Open Map Local's polygons carry a Z; anything that reads outline points as (x, y) pairs (the car detector's building mask) fails on a third value
+    from shapely.geometry import Polygon
+    z = Polygon([(0, 0, 5), (10, 0, 5), (10, 10, 5), (0, 10, 5)])
+    out = clean_buildings(gpd.GeoDataFrame({"building": ["yes"]}, geometry=[z], crs="EPSG:27700"))
+    assert len(out) == 1 and not out.geometry.iloc[0].has_z and out.crs == "EPSG:27700"
+    assert all(len(p) == 2 for p in out.geometry.iloc[0].exterior.coords) and abs(out.geometry.iloc[0].area - 100) < 1e-6

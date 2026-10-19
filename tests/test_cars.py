@@ -47,3 +47,16 @@ def test_the_real_detector_runs_when_installed(tmp_path):
     pytest.importorskip("cardet")
     path = _tif(tmp_path / "imagery.tif", size=256, metres=64)
     assert cars.remove_cars(path, gpd.GeoDataFrame({"building": []}, geometry=[], crs="EPSG:27700")) == 0   # a flat grey square has no cars
+
+
+def test_open_map_local_footprints_work_with_the_detectors_building_mask():
+    # the failure seen in a real build: the mask reads each outline point as (x, y), and Open Map Local's polygons carry a Z
+    blobs = pytest.importorskip("cardet.blobs")
+    import geopandas as gpd
+    from shapely.geometry import Polygon
+    from pipeline.bundle import _local_buildings
+    from pipeline.clean import clean_buildings
+    raw = gpd.GeoDataFrame({"building": ["yes"]}, geometry=[Polygon([(1000, 2000, 7), (1020, 2000, 7), (1020, 2020, 7), (1000, 2020, 7)])], crs="EPSG:27700")
+    features = _local_buildings(clean_buildings(raw), (1000, 2000))["features"]
+    mask = blobs.building_mask(features, (80, 80), 2.0)                       # 40 m at 2 px per metre
+    assert mask.shape == (80, 80) and mask[40, 40] and not mask[2, 70]

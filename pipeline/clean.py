@@ -5,6 +5,7 @@ Usage: python3 -m pipeline.clean --in data/buildings.geojson --out data/building
 import argparse
 
 import geopandas as gpd
+import shapely
 
 MIN_AREA_M2 = 5.0
 SIMPLIFY_TOLERANCE_M = 0.3
@@ -13,6 +14,7 @@ SIMPLIFY_TOLERANCE_M = 0.3
 def clean_buildings(gdf, min_area=MIN_AREA_M2, tolerance=SIMPLIFY_TOLERANCE_M):
     """Return a cleaned copy of `gdf` (polygons in a metre-based CRS)."""
     out = gdf.copy()
+    out["geometry"] = out.geometry.apply(shapely.force_2d)       # footprints are flat: Open Map Local's carry a Z, which tools that read (x, y) pairs (the car detector's building mask) choke on
     out["geometry"] = out.geometry.make_valid()
     out = out[~out.geometry.is_empty & out.geometry.notna()].explode(index_parts=False)
     out = out[out.geom_type == "Polygon"]  # make_valid can emit lines/points for degenerate input
