@@ -177,3 +177,24 @@ def test_flags_that_cannot_act_say_so_and_change_nothing(stubbed, monkeypatch, c
     s = ba.build_area(BBOX, "x", tmp / "b", work_root=tmp / "w", fill_footprints=True, register_imagery=True)      # no LiDAR surface, no buildings
     out = capsys.readouterr().out
     assert "not registered" in out and "registration" not in s and s["buildings"] == 0
+
+
+def test_stylised_imagery_is_drawn_from_open_data_with_no_photo_and_no_lean(lidar_town, monkeypatch):
+    def no_photo(*a, **k):
+        raise AssertionError("a stylised build must not fetch a photograph")
+    monkeypatch.setattr(ba.imagery, "fetch_imagery", no_photo)
+    monkeypatch.setattr(ba.register, "fit_registration", no_photo)                  # nothing to register
+    monkeypatch.setattr(ba.cars, "remove_cars", no_photo)                           # no cars to remove
+    s = ba.build_area(BBOX, "s", lidar_town / "b", work_root=lidar_town / "w", imagery_source="stylised", register_imagery=True, remove_cars=True, fill_footprints=True)
+    meta, _, rgb, fc = load_bundle(s["bundle"])
+    assert s["imagery_source"] == "stylised" and meta["imagery_source"] == "stylised" and "registration" not in s and "cars_removed" not in meta
+    assert meta["imagery_lean"] == {"ground": [0, 0], "perMetre": [0, 0]}           # drawn from the footprints: the viewer must not shift roofs
+    assert any("no aerial photography" in c for c in meta["attribution"]) and not any("Esri" in c for c in meta["attribution"])
+    assert rgb.shape[:2] == (384, 384) and rgb.std() > 5                           # a real picture, on the grid a photo would have
+    assert len(fc["features"]) == 3                                                # the footprints are the same
+
+
+def test_the_default_is_the_photograph_and_the_bundle_says_so(lidar_town):
+    s = ba.build_area(BBOX, "p", lidar_town / "b", work_root=lidar_town / "w")
+    meta, _, _, _ = load_bundle(s["bundle"])
+    assert meta["imagery_source"] == "esri" and "imagery_lean" not in meta
