@@ -67,6 +67,15 @@ class TestBox:
         with pytest.raises(BuildError, match="between 200 m and 4000 m"):
             normalise_box([1000, 1000, 5300, 1500])                                        # a strip longer than 4 km, though the area is fine
 
+    def test_a_box_the_picker_allows_is_not_refused_by_the_rounding(self):
+        assert normalise_box([1000, 1000, 1000 + 2012.51, 1000 + 1987.5]) == (1000, 1000, 3025, 3000)      # 3.9999 km2 asked; rounds to 2025 x 2000 = 4.05 km2
+        assert normalise_box([1000, 1000, 3000, 3000]) == (1000, 1000, 3000, 3000)                          # exactly 4 km2
+        assert normalise_box([1000, 1000, 1000 + 2000.001, 1000 + 2000]) == (1000, 1000, 3000, 3000)        # a hair over, float noise
+        with pytest.raises(BuildError, match=r"this one is 4\.01 km"):
+            normalise_box([1000, 1000, 1000 + 2010, 1000 + 1995])                                           # 4.00995 km2: 0.25% over, really over (and the message shows it)
+        with pytest.raises(BuildError, match=r"4\.20 km²"):
+            normalise_box([1000, 1000, 1000 + 2100, 1000 + 2000])
+
     def test_valid_id(self):
         assert valid_id("e310450n290875w1000h1000") and not valid_id("../etc") and not valid_id("bath") and not valid_id("e1n2w3h4/..")
 

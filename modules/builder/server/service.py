@@ -19,6 +19,7 @@ import time
 from pathlib import Path
 
 SNAP_M = 25
+AREA_TOLERANCE = 1.001                  # float noise in a box that is exactly at the limit
 MIN_SIZE_M, MAX_EDGE_M, MAX_AREA_M2 = 200, 4000, 4_000_000   # the area is the imagery and terrain budget; the edge keeps the imagery texture under the GPU's 16384 px limit
 GB_EXTENT = (0, 0, 700000, 1300000)
 MAX_QUEUED = 8
@@ -63,8 +64,9 @@ def normalise_box(bbox):
     w, h = snap(max_e - min_e), snap(max_n - min_n)
     if not (MIN_SIZE_M <= w <= MAX_EDGE_M and MIN_SIZE_M <= h <= MAX_EDGE_M):
         raise BuildError(f"each side must be between {MIN_SIZE_M} m and {MAX_EDGE_M} m")
-    if w * h > MAX_AREA_M2:
-        raise BuildError(f"the area must be at most {MAX_AREA_M2 // 1_000_000} km² in any shape (for example {2000} × {2000} m or {4000} × {1000} m): this one is {w * h / 1e6:.1f} km²")
+    asked = (max_e - min_e) * (max_n - min_n)         # the area of the box as picked (what the picker keeps within the limit): rounding each side to the grid could push the rounded one a little over
+    if asked > MAX_AREA_M2 * AREA_TOLERANCE:
+        raise BuildError(f"the area must be at most {MAX_AREA_M2 // 1_000_000} km² in any shape (for example {2000} × {2000} m or {4000} × {1000} m): this one is {asked / 1e6:.2f} km²")
     e0, n0 = snap(min_e), snap(min_n)
     box = (e0, n0, e0 + w, n0 + h)
     if box[0] < GB_EXTENT[0] or box[1] < GB_EXTENT[1] or box[2] > GB_EXTENT[2] or box[3] > GB_EXTENT[3]:
