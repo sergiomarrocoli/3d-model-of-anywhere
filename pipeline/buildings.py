@@ -81,7 +81,8 @@ class _Cached:
 
 
 USER_AGENT = "uk-map-3d (github.com/sergiomarrocoli/uk-map-3d)"
-RATE_LIMIT_WAIT_S = 20     # a 429 from a server: wait this long and ask the same one again once, before trying a mirror
+BUSY_WAITS_S = (15, 30, 45)   # a server that says it is busy (429, or 502/503/504 from the main one): wait this long, ask it again, and again, before trying a mirror
+MIRROR_TIMEOUT_S = 45        # the mirrors are often dead: do not sit on one for the main server's 90 s
 CURL_TIMEOUT_S = 150       # overpass-api.de can take over 30 s to answer even a trivial query when it is busy
 
 
@@ -98,10 +99,13 @@ def _curl_post(url, query, timeout=CURL_TIMEOUT_S):
     return _Cached(done.stdout)
 
 
-def _rate_limited(exc):
-    """Did the server say 'too many requests' (HTTP 429), as a requests error or through curl's message?"""
+def _busy(exc, primary):
+    """Is this 'try again in a moment' rather than 'no'? A 429 (too many requests) from anyone; from the main server also 502, 503 and 504,
+    which it answers at once when it is busy and which clear within seconds (a request 20 s later got through)."""
     text = str(exc)
-    return "429" in text or "Too Many Requests" in text
+    if "429" in text or "Too Many Requests" in text:
+        return True
+    return primary and any(sign in text for sign in ("502", "503", "504", "Bad Gateway", "Service Unavailable", "Gateway Time"))
 
 
 def _overpass(query, cache_dir=None, ttl=None, what="OpenStreetMap data"):
@@ -117,11 +121,13 @@ def _overpass(query, cache_dir=None, ttl=None, what="OpenStreetMap data"):
     for attempt in range(3):
         for url in OVERPASS_URLS:
             host = url.split("/")[2]
-            for go in range(2):                          # a second go at the same server, only after a rate limit
+            primary = url == OVERPASS_URLS[0]
+            waits = BUSY_WAITS_S if primary else BUSY_WAITS_S[:1]      # the main server gets all the patience; a mirror one short wait
+            for go in range(len(waits) + 1):      # more goes at the same server only while it says it is busy
                 say(f"Asking {host} for the {what}" + (f" (attempt {attempt + 1})" if attempt else "") + (" again" if go else ""))
                 try:
                     try:
-                        resp = requests.post(url, data={"data": query}, timeout=90, headers={"User-Agent": USER_AGENT})
+                        resp = requests.post(url, data={"data": query}, timeout=90 if primary else MIRROR_TIMEOUT_S, headers={"User-Agent": USER_AGENT})
                     except requests.exceptions.SSLError:
                         say(f"Python cannot make the TLS connection to {host}; asking through curl instead (this can take a minute)")
                         resp = _curl_post(url, query)
@@ -135,9 +141,9 @@ def _overpass(query, cache_dir=None, ttl=None, what="OpenStreetMap data"):
                 except (requests.RequestException, ValueError) as exc:
                     reason = f"{type(exc).__name__}: {' '.join(str(exc).split())[:150]}".rstrip(": ")
                     errors.append(f"{url}: {reason}")
-                    if go == 0 and _rate_limited(exc):
-                        say(f"{host} is rate limiting us ({reason}); waiting {RATE_LIMIT_WAIT_S} s, then asking it again")
-                        time.sleep(RATE_LIMIT_WAIT_S)
+                    if go < len(waits) and _busy(exc, primary):
+                        say(f"{host} is busy ({reason}); waiting {waits[go]} s, then asking it again")
+                        time.sleep(waits[go])
                         continue
                     say(f"{host} did not answer ({reason}); trying the next one")
                     break
