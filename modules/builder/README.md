@@ -30,6 +30,10 @@ $ curl localhost:8788/api/builds/e310700n291125w500h500
 {"status":"building","percent":60,"stage":"buildings",...}   ->   {"status":"ready","percent":100,"bundle":"/bundles/area_e310700n291125w500h500/"}
 ```
 
+## Where areas are written
+
+`data/bundles` in this checkout, or `BUNDLES_DIR=/path` to write them where a game serves them from (civil-war's `bin/cars` sets it to its own `data/bundles`; without it the game would look for the finished area in its own folder and get a 404). The service prints the folder at start.
+
 ## Caching and limits (the point of the service)
 
 - **Same area, same bundle.** The box is rounded to a 25 m grid, so nearby picks share a build, and the id comes from the
