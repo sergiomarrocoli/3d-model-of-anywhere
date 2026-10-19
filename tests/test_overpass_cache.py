@@ -152,22 +152,22 @@ def test_a_rate_limit_waits_and_asks_the_same_server_again_before_trying_a_mirro
     monkeypatch.setattr(buildings.subprocess, "run", run)
     assert buildings._overpass("q", cache_dir=tmp_path).json() == {"elements": []}
     assert len(runs) == 2 and posted == [buildings.OVERPASS_URLS[0]] * 2                  # the main server twice, never a mirror
-    assert slept == [buildings.RATE_LIMIT_WAIT_S]
-    assert any("rate limiting us" in line and "429" in line for line in said) and any(line.endswith("again") for line in said)
+    assert slept == [buildings.BUSY_WAITS_S[0]]
+    assert any("is busy" in line and "429" in line for line in said) and any(line.endswith("again") for line in said)
 
 
-def test_only_a_rate_limit_gets_a_second_go_at_the_same_server(tmp_path, monkeypatch):
+def test_only_a_busy_answer_gets_another_go_at_the_same_server(tmp_path, monkeypatch):
     _said(monkeypatch)
     monkeypatch.setattr(buildings.time, "sleep", lambda s: None)
     asked = []
 
     def post(url, **kw):
         asked.append(url)
-        raise buildings.requests.exceptions.HTTPError("503 Service Unavailable")
+        raise buildings.requests.exceptions.HTTPError("500 Server Error: Internal Server Error")
     monkeypatch.setattr(buildings.requests, "post", post)
-    with pytest.raises(RuntimeError, match="503 Service Unavailable"):
+    with pytest.raises(RuntimeError, match="500 Server Error"):
         buildings._overpass("q", cache_dir=tmp_path)
-    assert asked == buildings.OVERPASS_URLS * 3                                           # each server once per round: no waiting around for a 503
+    assert asked == buildings.OVERPASS_URLS * 3                                           # each server once per round: no waiting around for a plain error
 
 
 def test_a_rate_limit_that_goes_on_still_ends_in_a_clear_error(tmp_path, monkeypatch):
@@ -180,4 +180,36 @@ def test_a_rate_limit_that_goes_on_still_ends_in_a_clear_error(tmp_path, monkeyp
     monkeypatch.setattr(buildings.requests, "post", post)
     with pytest.raises(RuntimeError, match="All Overpass endpoints failed.*429"):
         buildings._overpass("q", cache_dir=tmp_path)
-    assert slept.count(buildings.RATE_LIMIT_WAIT_S) == 3 * len(buildings.OVERPASS_URLS)        # one wait per server per round, no more
+    mirrors = len(buildings.OVERPASS_URLS) - 1
+    assert sum(slept) == 3 * (sum(buildings.BUSY_WAITS_S) + mirrors * buildings.BUSY_WAITS_S[0]) + (5 + 10 + 15)      # each round: 15 + 30 + 45 for the main server and one 15 for each mirror, plus the pauses between rounds; no more
+
+
+def test_the_main_server_saying_bad_gateway_is_waited_out_before_any_mirror(tmp_path, monkeypatch):
+    said, slept = _said(monkeypatch), []
+    monkeypatch.setattr(buildings.shutil, "which", lambda name: "/usr/bin/curl")
+    posted = _ssl_fails(monkeypatch)                                                       # Python cannot reach the main server: curl does
+    monkeypatch.setattr(buildings.time, "sleep", slept.append)                             # (after _ssl_fails, which stubs sleep itself)
+    answers = iter([_Done("", 56, "curl: (56) The requested URL returned error: 502"), _Done("", 56, "curl: (56) The requested URL returned error: 502"), _Done('{"elements": []}')])
+    monkeypatch.setattr(buildings.subprocess, "run", lambda *a, **k: next(answers))
+    assert buildings._overpass("q", cache_dir=tmp_path).json() == {"elements": []}
+    assert slept == [15, 30]                                                               # two busy answers, then it let us in
+    assert posted == [buildings.OVERPASS_URLS[0]] * 3                                      # the mirrors were never asked
+    assert sum("is busy" in line for line in said) == 2
+
+
+def test_a_mirror_saying_503_is_not_waited_for_and_gets_a_shorter_timeout(tmp_path, monkeypatch):
+    _said(monkeypatch)
+    slept, timeouts = [], []
+    monkeypatch.setattr(buildings.time, "sleep", slept.append)
+
+    def post(url, **kw):
+        timeouts.append((url, kw["timeout"]))
+        if "overpass-api.de" in url:
+            raise buildings.requests.exceptions.HTTPError("500 Server Error")
+        if "private.coffee" in url:
+            raise buildings.requests.exceptions.HTTPError("503 Service Unavailable")
+        return Resp()
+    monkeypatch.setattr(buildings.requests, "post", post)
+    assert buildings._overpass("q", cache_dir=tmp_path).json() == {"elements": []}
+    assert slept == []                                                                     # no waiting on a mirror's 503: it is the mirrors that are unreliable
+    assert dict(timeouts)[buildings.OVERPASS_URLS[0]] == 90 and dict(timeouts)[buildings.OVERPASS_URLS[1]] == buildings.MIRROR_TIMEOUT_S
