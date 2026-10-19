@@ -5,6 +5,8 @@ Usage: python3 -m pipeline.buildings --bbox 375000 164500 375500 165000 --out da
 import argparse
 import hashlib
 import json
+import shutil
+import subprocess
 import time
 from pathlib import Path
 
@@ -66,13 +68,33 @@ def _rings(el):
 
 
 class _Cached:
-    """Stands in for a requests response when the answer came from the disk cache."""
+    """Stands in for a requests response when the answer came from the disk cache (or from curl)."""
 
     def __init__(self, text):
         self.text = text
 
+    def raise_for_status(self):
+        pass
+
     def json(self):
         return json.loads(self.text)
+
+
+USER_AGENT = "uk-map-3d (github.com/sergiomarrocoli/uk-map-3d)"
+CURL_TIMEOUT_S = 150       # overpass-api.de can take over 30 s to answer even a trivial query when it is busy
+
+
+def _curl_post(url, query, timeout=CURL_TIMEOUT_S):
+    """The same POST through curl, which has its own TLS: macOS's system Python (LibreSSL 2.8) cannot make a connection to overpass-api.de,
+    which would leave only the mirrors (often down), but curl can. Returns a response-like object; raises RequestException if curl is missing or fails."""
+    curl = shutil.which("curl")
+    if curl is None:
+        raise requests.RequestException("curl is not installed")
+    done = subprocess.run([curl, "-sS", "--fail", "-m", str(timeout), "-A", USER_AGENT, "--data-urlencode", "data@-", url],
+                          input=query, capture_output=True, text=True)
+    if done.returncode != 0:
+        raise requests.RequestException(f"curl exit {done.returncode}: {done.stderr.strip()[:160]}")
+    return _Cached(done.stdout)
 
 
 def _overpass(query, cache_dir=None, ttl=None, what="OpenStreetMap data"):
@@ -90,8 +112,11 @@ def _overpass(query, cache_dir=None, ttl=None, what="OpenStreetMap data"):
             host = url.split("/")[2]
             say(f"Asking {host} for the {what}" + (f" (attempt {attempt + 1})" if attempt else ""))
             try:
-                resp = requests.post(url, data={"data": query}, timeout=90,
-                                     headers={"User-Agent": "uk-map-3d (github.com/sergiomarrocoli/uk-map-3d)"})
+                try:
+                    resp = requests.post(url, data={"data": query}, timeout=90, headers={"User-Agent": USER_AGENT})
+                except requests.exceptions.SSLError:
+                    say(f"Python cannot make the TLS connection to {host}; asking through curl instead (this can take a minute)")
+                    resp = _curl_post(url, query)
                 resp.raise_for_status()
                 resp.json()
                 cache_dir.mkdir(parents=True, exist_ok=True)
