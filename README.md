@@ -83,6 +83,17 @@ offset of (-0.4 m east, +1.5 m north), a lean of (0.35, -0.15) m per metre of he
 warm cache the build took 31 s against 14 s without the flags. The lean is fitted per area and assumes one photo capture;
 a roof beyond its footprint (or a building in neither data set) is not corrected.
 
+## Stylised ground (images you can publish)
+
+The photograph that drapes the terrain (Esri World Imagery) is for development use only, so screenshots and video made with it cannot go in the repo, and no open source has crisp aerial photos of Great Britain (the 12.5 and 25 cm national set is for public bodies; Sentinel-2 is open but 10 m per pixel). So the ground can be drawn instead:
+
+```
+.venv/bin/python -m pipeline.build_area --bbox 310450 290880 311450 291880 --id newtown-stylised --fill-footprints --imagery stylised
+IMAGERY=stylised bin/cars        # in civil-war: the build service does the same for any area you pick
+```
+
+`pipeline/stylised.py` paints the land cover raster (road, paved, grass, bare, trees, water, buildings) in flat colours, gives every building a roof colour of its own, lights it from the north west with the LiDAR surface (pitched roofs, tree canopies and slopes shade, buildings and trees cast shadows), and adds a grain per surface and a darker line where roads, water and roofs meet the ground. It is crisp at any zoom, matches the footprints exactly (so there is no lean to fix and no cars to remove, and the bundle's `imagery_lean` is zero), takes about 15 s for a 1 km box, and uses only open data (OpenStreetMap, OS Open Map Local, Welsh and English LiDAR) with their attributions. `meta.json` says `imagery_source: "stylised"`; the build service keeps a drawn and a photographic build of one area apart.
+
 Design notes and data sources are in [PLAN.md](PLAN.md).
 
 ## Use it from another project

@@ -16,7 +16,7 @@ import rasterio
 import json
 
 from pipeline.progress import say
-from pipeline import bundle, buildings, cars, clean, dtm, footprints, heights, base, imagery, landcover, omlocal, register, terrain_fill, wales_lidar
+from pipeline import bundle, buildings, cars, clean, dtm, footprints, heights, base, imagery, landcover, omlocal, register, stylised, terrain_fill, wales_lidar
 
 NRW_ATTRIBUTION = "Contains Natural Resources Wales information © Natural Resources Wales and database right (OGL v3)"
 
@@ -30,7 +30,7 @@ _log = say
 
 
 def build_area(bbox, area_id, out_dir="data/bundles", dtm_files=None, dtm_attribution=NRW_ATTRIBUTION,
-               buildings_source="auto", work_root="data/work", remove_cars=False, fill_footprints=False, register_imagery=False):
+               buildings_source="auto", work_root="data/work", remove_cars=False, fill_footprints=False, register_imagery=False, imagery_source="esri"):
     bbox = tuple(float(v) for v in bbox)
     w = Path(work_root) / str(area_id)
     w.mkdir(parents=True, exist_ok=True)
@@ -99,28 +99,41 @@ def build_area(bbox, area_id, out_dir="data/bundles", dtm_files=None, dtm_attrib
         summary["height_sources"] = b.height_source.value_counts().to_dict()
     _log(f"Buildings after cleanup: {len(b)}")
 
-    # 3. Imagery
-    src = imagery.esri_world_imagery()
-    img = imagery.fetch_imagery(bbox, w / "imagery.tif", source=src)
-    credits.append(src.attribution)
-    _log("Imagery fetched")
+    # 3. Imagery: a photograph (Esri World Imagery, development use only), or a texture drawn from open data that can be published
     registration = None
-    if register_imagery and (dsm_path is None or not len(b)):
-        _log("Photo not registered: it needs a LiDAR surface and some buildings to measure against")
-    if register_imagery and dsm_path is not None and len(b):     # the photo leans tall things away from their footprints: measure it and move them back
-        _log("Fitting the photo to the map (roads and building outlines)")
-        registration = register.fit_registration(b, w / "imagery.tif", w / "dtm.tif", dsm_path, omlocal.fetch_omlocal_roads(bbox))
-        refilled = register.warp_imagery(w / "imagery.tif", b, registration["ground"], registration["lean"], w / "imagery_registered.tif")
-        img = w / "imagery_registered.tif"
-        summary["registration"] = registration
-        _log(f"Photo registered: ground {registration['ground']} m, lean {registration['lean']} m per m of height, {refilled:.1%} refilled")
-    if remove_cars:
-        summary["cars_removed"] = cars.remove_cars(img, b)
-        _log(f"Cars removed: {summary['cars_removed']}")
+    if imagery_source == "stylised":
+        for flag, name in ((register_imagery, "register"), (remove_cars, "remove-cars")):
+            if flag:
+                _log(f"--{name} does nothing with a stylised texture (there is no photograph to fix)")
+        remove_cars = False
+        _log("Working out the land cover (roads, trees, water)")
+        land = landcover.build_landcover(w / "dtm.tif", None, b, dsm_path, bbox=bbox)
+        _log("Drawing the stylised ground texture")
+        img = stylised.draw(land[0], w / "dtm.tif", dsm_path, b, bbox, w / "imagery.tif")
+        credits.append(stylised.ATTRIBUTION)
+        summary["imagery_source"] = "stylised"
+        _log("Imagery drawn")
+    else:
+        src = imagery.esri_world_imagery()
+        img = imagery.fetch_imagery(bbox, w / "imagery.tif", source=src)
+        credits.append(src.attribution)
+        _log("Imagery fetched")
+        if register_imagery and (dsm_path is None or not len(b)):
+            _log("Photo not registered: it needs a LiDAR surface and some buildings to measure against")
+        if register_imagery and dsm_path is not None and len(b):     # the photo leans tall things away from their footprints: measure it and move them back
+            _log("Fitting the photo to the map (roads and building outlines)")
+            registration = register.fit_registration(b, w / "imagery.tif", w / "dtm.tif", dsm_path, omlocal.fetch_omlocal_roads(bbox))
+            refilled = register.warp_imagery(w / "imagery.tif", b, registration["ground"], registration["lean"], w / "imagery_registered.tif")
+            img = w / "imagery_registered.tif"
+            summary["registration"] = registration
+            _log(f"Photo registered: ground {registration['ground']} m, lean {registration['lean']} m per m of height, {refilled:.1%} refilled")
+        if remove_cars:
+            summary["cars_removed"] = cars.remove_cars(img, b)
+            _log(f"Cars removed: {summary['cars_removed']}")
 
-    # 4. Land cover (after the cars are gone, so the road under a parked car is seen as road)
-    _log("Working out the land cover (roads, trees, water)")
-    land = landcover.build_landcover(w / "dtm.tif", img, b, dsm_path, bbox=bbox)
+        # 4. Land cover (after the cars are gone, so the road under a parked car is seen as road)
+        _log("Working out the land cover (roads, trees, water)")
+        land = landcover.build_landcover(w / "dtm.tif", img, b, dsm_path, bbox=bbox)
     share = ", ".join(f"{k} {v:.0%}" for k, v in sorted(land[1]["share"].items(), key=lambda kv: -kv[1]))
     _log(f"Land cover: {share}" + ("" if land[1]["canopy_from_lidar"] else " (no LiDAR surface, so trees only where OSM maps them)"))
     summary["landcover"] = land[1]["share"]
@@ -132,6 +145,11 @@ def build_area(bbox, area_id, out_dir="data/bundles", dtm_files=None, dtm_attrib
         meta = json.loads((root / "meta.json").read_text())
         meta["cars_removed"] = summary["cars_removed"]
         (root / "meta.json").write_text(json.dumps(meta, indent=2) + "\n")
+    meta = json.loads((root / "meta.json").read_text())
+    meta["imagery_source"] = imagery_source                       # so a viewer, and the build service's cache, can tell a photo from a drawn texture
+    if imagery_source == "stylised":
+        meta["imagery_lean"] = {"ground": [0, 0], "perMetre": [0, 0]}      # drawn from the footprints themselves: nothing leans, so the viewer must not shift roofs
+    (root / "meta.json").write_text(json.dumps(meta, indent=2) + "\n")
     if registration and (any(registration["ground"]) or any(registration["lean"])):      # the photo now matches the footprints, so the viewer must not shift roofs again
         meta = json.loads((root / "meta.json").read_text())
         meta["imagery_registration"] = registration
@@ -156,6 +174,7 @@ def main(argv=None):
     ap.add_argument("--remove-cars", action="store_true", help="paint parked cars out of the imagery (needs pipeline/requirements-cars.txt)")
     ap.add_argument("--fill-footprints", action="store_true", help="add OS Open Map Local buildings where OSM has none (kept only where the LiDAR sees something tall)")
     ap.add_argument("--register", action="store_true", dest="register_imagery", help="fit the photo's offset and lean from roads and footprints, and warp it onto the OS grid (needs a LiDAR surface)")
+    ap.add_argument("--imagery", choices=["esri", "stylised"], default="esri", dest="imagery_source", help="the ground texture: Esri World Imagery (a photograph, development use only), or a stylised one drawn from open data (land cover and LiDAR) that can be published")
     a = ap.parse_args(argv)
     if a.centre:
         e, n = a.centre
@@ -165,7 +184,7 @@ def main(argv=None):
         bbox = a.bbox
     if not (bbox[0] < bbox[2] and bbox[1] < bbox[3]):
         sys.exit("bbox must be MINE MINN MAXE MAXN with min < max")
-    result = build_area(bbox, a.id, a.out, a.dtm_file, a.dtm_attribution, a.buildings_source, remove_cars=a.remove_cars, fill_footprints=a.fill_footprints, register_imagery=a.register_imagery)
+    result = build_area(bbox, a.id, a.out, a.dtm_file, a.dtm_attribution, a.buildings_source, remove_cars=a.remove_cars, fill_footprints=a.fill_footprints, register_imagery=a.register_imagery, imagery_source=a.imagery_source)
     print(result)
 
 

@@ -6,7 +6,7 @@ import urllib.request
 import pytest
 
 import service as svc
-from service import BuildError, BuildService, area_id, bundles_dir_setting, cars_setting, normalise_box, on_unless_off, snap, valid_id
+from service import BuildError, BuildService, area_id, bundles_dir_setting, cars_setting, imagery_setting, normalise_box, on_unless_off, snap, valid_id
 
 V = 3
 
@@ -311,6 +311,33 @@ class TestCarsSetting:
         assert "--fill-footprints" in seen[0] and "--register" in seen[0]
         assert "--fill-footprints" in seen[1] and "--register" not in seen[1]
         assert "--fill-footprints" not in seen[2] and "--register" not in seen[2]               # the library default is the plain build; serve.py turns them on
+
+    def test_the_runner_asks_for_the_stylised_ground_when_told_to(self, tmp_path):
+        seen = []
+        class Fake:
+            def __init__(self, cmd, **kw):
+                seen.append(cmd)
+                self.stdout = iter([])
+            def wait(self): return 0
+            def kill(self): pass
+        orig = svc.subprocess.Popen
+        svc.subprocess.Popen = Fake
+        try:
+            svc.subprocess_runner(tmp_path, imagery="stylised")((1, 2, 3, 4), "e1n2w2h2", tmp_path, lambda l: None)
+            svc.subprocess_runner(tmp_path)((1, 2, 3, 4), "e1n2w2h2", tmp_path, lambda l: None)
+        finally:
+            svc.subprocess.Popen = orig
+        assert seen[0][-2:] == ["--imagery", "stylised"] and "--imagery" not in seen[1]
+        assert [imagery_setting(v) for v in (None, "", "esri", "photo", "stylised", " Stylized ", "drawn")] == ["esri", "esri", "esri", "esri", "stylised", "stylised", "stylised"]
+
+    def test_a_photo_build_and_a_drawn_one_of_the_same_area_are_different_bundles(self, tmp_path):
+        d = tmp_path / "area_e310450n290875w1000h1000"; d.mkdir()
+        (d / "meta.json").write_text(json.dumps({"pipeline_version": V, "imagery_source": "stylised"}))
+        assert BuildService(tmp_path, lambda *a: None, V, imagery="stylised").cached("e310450n290875w1000h1000") is True
+        assert BuildService(tmp_path, lambda *a: None, V).cached("e310450n290875w1000h1000") is False              # asked for a photo: build it
+        (d / "meta.json").write_text(json.dumps({"pipeline_version": V}))                                           # an older bundle has no imagery_source: it is a photo
+        assert BuildService(tmp_path, lambda *a: None, V).cached("e310450n290875w1000h1000") is True
+        assert BuildService(tmp_path, lambda *a: None, V, imagery="stylised").cached("e310450n290875w1000h1000") is False
 
     def test_the_settings_are_on_unless_turned_off(self):
         assert on_unless_off(None) and on_unless_off("") and on_unless_off("1") and on_unless_off("yes")

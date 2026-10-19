@@ -178,7 +178,8 @@ def _grid(path, transform_, shape, resampling=Resampling.bilinear):
 
 def build_landcover(dtm_path, imagery_path, buildings, dsm_path=None, elements=None, bbox=None):
     """(uint8 raster, info). The grid is the DTM's extent at RES_M, rows north to south. `buildings` is a GeoDataFrame in
-    EPSG:27700 (may be empty). `elements` are Overpass elements (fetched for `bbox`, default the DTM's, when not given)."""
+    EPSG:27700 (may be empty). `elements` are Overpass elements (fetched for `bbox`, default the DTM's, when not given).
+    With `imagery_path=None` (no photo, as for a stylised texture) there is no colour guess: whatever the map data does not cover is grass."""
     with rasterio.open(dtm_path) as dtm:
         left, bottom, right, top = dtm.bounds
     width, height = round((right - left) / RES_M), round((top - bottom) / RES_M)
@@ -187,9 +188,12 @@ def build_landcover(dtm_path, imagery_path, buildings, dsm_path=None, elements=N
         elements = fetch_elements(bbox or (left, bottom, right, top))
     areas, lines = shapes(elements)
 
-    with rasterio.open(imagery_path) as src:
-        rgb = np.moveaxis(src.read(out_shape=(3, height, width), resampling=Resampling.average), 0, -1)
-    arr = sieve(guess_from_imagery(rgb), MIN_BLOB_CELLS, connectivity=4)
+    if imagery_path is None:
+        arr = np.full((height, width), GRASS, np.uint8)
+    else:
+        with rasterio.open(imagery_path) as src:
+            rgb = np.moveaxis(src.read(out_shape=(3, height, width), resampling=Resampling.average), 0, -1)
+        arr = sieve(guess_from_imagery(rgb), MIN_BLOB_CELLS, connectivity=4)
 
     def of(items, cls, bridge=None):
         return [g for c, g, b in items if c == cls and (bridge is None or b == bridge)]

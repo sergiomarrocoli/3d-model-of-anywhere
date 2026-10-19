@@ -102,6 +102,11 @@ class Job:
         return d
 
 
+def imagery_setting(env_value):
+    """'stylised' when IMAGERY asks for the drawn ground texture (no photograph, can be published), else 'esri' (the photograph)."""
+    return "stylised" if (env_value or "").strip().lower() in ("stylised", "stylized", "drawn") else "esri"
+
+
 def on_unless_off(env_value):
     """A setting that is on unless it is explicitly turned off (0, false, no, off): FILL_FOOTPRINTS and REGISTER_IMAGERY."""
     return (env_value or "").strip().lower() not in ("0", "false", "no", "off")
@@ -120,7 +125,7 @@ def cars_setting(env_value, detector_installed):
     return False, "kept (detector not installed: pip install -r pipeline/requirements-cars.txt)"
 
 
-def subprocess_runner(root, python=sys.executable, timeout=BUILD_TIMEOUT_S, remove_cars=False, fill_footprints=False, register=False):
+def subprocess_runner(root, python=sys.executable, timeout=BUILD_TIMEOUT_S, remove_cars=False, fill_footprints=False, register=False, imagery="esri"):
     """Run the real pipeline. `on_line` gets each log line as it appears; raises if the build fails or times out."""
     def run(box, id, out_dir, on_line):
         cmd = [python, "-m", "pipeline.build_area", "--bbox", *[str(v) for v in box], "--id", id, "--out", str(out_dir)]
@@ -128,6 +133,8 @@ def subprocess_runner(root, python=sys.executable, timeout=BUILD_TIMEOUT_S, remo
             cmd.append("--remove-cars")
         if fill_footprints:      # Open Map Local buildings where OSM has none (kept only where the LiDAR sees them)
             cmd.append("--fill-footprints")
+        if imagery == "stylised":     # the ground drawn from open data instead of a photograph
+            cmd += ["--imagery", "stylised"]
         if register:             # the photo fitted to the grid and the LiDAR (needs a LiDAR surface; it says so and does nothing without)
             cmd.append("--register")
         proc = subprocess.Popen(cmd, cwd=str(root), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
@@ -148,8 +155,8 @@ def subprocess_runner(root, python=sys.executable, timeout=BUILD_TIMEOUT_S, remo
 
 
 class BuildService:
-    def __init__(self, bundles_dir, runner, pipeline_version, clock=time.time):
-        self.bundles_dir, self.runner, self.version, self.clock = Path(bundles_dir), runner, pipeline_version, clock
+    def __init__(self, bundles_dir, runner, pipeline_version, clock=time.time, imagery="esri"):
+        self.bundles_dir, self.runner, self.version, self.clock, self.imagery = Path(bundles_dir), runner, pipeline_version, clock, imagery
         self.jobs, self.lock, self.q = {}, threading.RLock(), queue.Queue()
         self.thread = None
 
@@ -157,7 +164,8 @@ class BuildService:
     def cached(self, id):
         meta = self.bundles_dir / f"area_{id}" / "meta.json"
         try:
-            return json.loads(meta.read_text()).get("pipeline_version") == self.version
+            built = json.loads(meta.read_text())
+            return built.get("pipeline_version") == self.version and built.get("imagery_source", "esri") == self.imagery      # a photo build and a drawn one of the same area are different bundles
         except (OSError, ValueError):
             return False
 

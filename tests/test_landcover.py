@@ -121,3 +121,11 @@ def test_the_raster_is_half_metre_cells_and_the_share_adds_up(tmp_path):
     arr, info = build(tmp_path, [way(square(0, 0, 100, 100), landuse="grass")])
     assert arr.shape == (200, 200) and arr.dtype == np.uint8 and info["resolution_m"] == 0.5
     assert sum(info["share"].values()) == pytest.approx(1.0, abs=0.001)
+
+
+def test_with_no_photo_there_is_no_colour_guess_and_what_the_map_does_not_cover_is_grass(tmp_path):
+    dtm = tif(tmp_path / "dtm.tif", 10.0)
+    elements = [way([(0, 80), (100, 80)], highway="residential"), way(square(60, 5, 90, 30), natural="water")]
+    arr, info = lc.build_landcover(dtm, None, gpd.GeoDataFrame({"building": []}, geometry=[], crs="EPSG:27700"), None, elements=elements)
+    assert cell(arr, 20, 20) == lc.GRASS and cell(arr, 20, 80) == lc.ROAD and cell(arr, 75, 15) == lc.WATER
+    assert not (arr == lc.UNKNOWN).any() and info["share"]["grass"] > 0.7
