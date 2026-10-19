@@ -10,6 +10,8 @@ outlines and heights, aerial imagery) into a small tile bundle, and a three.js c
 This repository is only about selecting an area and building a map. The games that use it (a Micro Machines style racer,
 a Cannon Fodder style walker, multiplayer) live in `civil-war`, which installs this as a package.
 
+**How an area gets built, step by step (with diagrams): [docs/build-process.md](docs/build-process.md).**
+
 ## What is here
 
 - `pipeline/` and `build_area.py`: terrain, buildings, imagery and the tile bundle format (Python; tests in `tests/`).
