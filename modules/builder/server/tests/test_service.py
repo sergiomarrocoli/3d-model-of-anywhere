@@ -6,7 +6,7 @@ import urllib.request
 import pytest
 
 import service as svc
-from service import BuildError, BuildService, area_id, bundles_dir_setting, cars_setting, normalise_box, snap, valid_id
+from service import BuildError, BuildService, area_id, bundles_dir_setting, cars_setting, normalise_box, on_unless_off, snap, valid_id
 
 V = 3
 
@@ -262,6 +262,31 @@ class TestCarsSetting:
         finally:
             svc.subprocess.Popen = orig
         assert "--remove-cars" in seen[0] and "--remove-cars" not in seen[1]
+
+    def test_the_runner_adds_the_footprint_and_registration_flags_when_asked(self, tmp_path):
+        seen = []
+        class Fake:
+            def __init__(self, cmd, **kw):
+                seen.append(cmd)
+                self.stdout = iter([])
+            def wait(self): return 0
+            def kill(self): pass
+        orig = svc.subprocess.Popen
+        svc.subprocess.Popen = Fake
+        try:
+            svc.subprocess_runner(tmp_path, fill_footprints=True, register=True)((1, 2, 3, 4), "e1n2w2h2", tmp_path, lambda l: None)
+            svc.subprocess_runner(tmp_path, fill_footprints=True)((1, 2, 3, 4), "e1n2w2h2", tmp_path, lambda l: None)
+            svc.subprocess_runner(tmp_path)((1, 2, 3, 4), "e1n2w2h2", tmp_path, lambda l: None)
+        finally:
+            svc.subprocess.Popen = orig
+        assert "--fill-footprints" in seen[0] and "--register" in seen[0]
+        assert "--fill-footprints" in seen[1] and "--register" not in seen[1]
+        assert "--fill-footprints" not in seen[2] and "--register" not in seen[2]               # the library default is the plain build; serve.py turns them on
+
+    def test_the_settings_are_on_unless_turned_off(self):
+        assert on_unless_off(None) and on_unless_off("") and on_unless_off("1") and on_unless_off("yes")
+        for word in ("0", "false", "No", " OFF "):
+            assert on_unless_off(word) is False
 
 
 class TestBundlesDir:
