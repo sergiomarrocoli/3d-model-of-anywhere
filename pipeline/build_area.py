@@ -7,7 +7,6 @@ Buildings: OSM, falling back to OS Open Map Local when OSM has none in the box.
 """
 import argparse
 import sys
-import time
 from pathlib import Path
 
 import geopandas as gpd
@@ -16,6 +15,7 @@ import rasterio
 
 import json
 
+from pipeline.progress import say
 from pipeline import bundle, buildings, cars, clean, dtm, footprints, heights, base, imagery, landcover, omlocal, register, terrain_fill, wales_lidar
 
 NRW_ATTRIBUTION = "Contains Natural Resources Wales information © Natural Resources Wales and database right (OGL v3)"
@@ -26,8 +26,7 @@ def _valid_fraction(path):
         return float(1 - np.ma.getmaskarray(ds.read(1, masked=True)).mean())
 
 
-def _log(msg):
-    print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
+_log = say
 
 
 def build_area(bbox, area_id, out_dir="data/bundles", dtm_files=None, dtm_attribution=NRW_ATTRIBUTION,
@@ -109,6 +108,7 @@ def build_area(bbox, area_id, out_dir="data/bundles", dtm_files=None, dtm_attrib
     if register_imagery and (dsm_path is None or not len(b)):
         _log("Photo not registered: it needs a LiDAR surface and some buildings to measure against")
     if register_imagery and dsm_path is not None and len(b):     # the photo leans tall things away from their footprints: measure it and move them back
+        _log("Fitting the photo to the map (roads and building outlines)")
         registration = register.fit_registration(b, w / "imagery.tif", w / "dtm.tif", dsm_path, omlocal.fetch_omlocal_roads(bbox))
         refilled = register.warp_imagery(w / "imagery.tif", b, registration["ground"], registration["lean"], w / "imagery_registered.tif")
         img = w / "imagery_registered.tif"
@@ -119,12 +119,14 @@ def build_area(bbox, area_id, out_dir="data/bundles", dtm_files=None, dtm_attrib
         _log(f"Cars removed: {summary['cars_removed']}")
 
     # 4. Land cover (after the cars are gone, so the road under a parked car is seen as road)
+    _log("Working out the land cover (roads, trees, water)")
     land = landcover.build_landcover(w / "dtm.tif", img, b, dsm_path, bbox=bbox)
     share = ", ".join(f"{k} {v:.0%}" for k, v in sorted(land[1]["share"].items(), key=lambda kv: -kv[1]))
     _log(f"Land cover: {share}" + ("" if land[1]["canopy_from_lidar"] else " (no LiDAR surface, so trees only where OSM maps them)"))
     summary["landcover"] = land[1]["share"]
 
     # 5. Bundle
+    _log("Writing the bundle (heightmap, imagery, land cover)")
     root = bundle.write_bundle(out_dir, area_id, w / "dtm.tif", img, b, credits, dsm_path, landcover=land)
     if remove_cars:   # say so in the bundle, so a reader can tell a cleaned build from a plain one
         meta = json.loads((root / "meta.json").read_text())

@@ -51,7 +51,9 @@ export async function buildArea(bbox, { onProgress = () => {}, signal, fetchImpl
   return { id: job.id, bundleUrl: job.bundle, bbox: job.bbox, cached };
 }
 
-const STAGES = { waiting: 'waiting its turn', starting: 'starting', terrain: 'fetching terrain', buildings: 'fetching buildings', imagery: 'fetching imagery', done: 'done', failed: 'failed' };
+const STAGES = { waiting: 'waiting its turn', starting: 'starting', terrain: 'fetching terrain', buildings: 'fetching buildings', imagery: 'fetching imagery', registering: 'fitting the photo to the map',
+  cars: 'removing parked cars', 'land cover': 'working out land cover', bundle: 'writing the bundle', done: 'done', failed: 'failed' };
+export const LOG_LINES_SHOWN = 6, QUIET_AFTER_S = 15;
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
 /** Text for a job update. Pure, so it can be tested. */
@@ -60,6 +62,24 @@ export function describeJob(job) {
   if (job.status === 'ready') return 'Ready';
   if (job.status === 'error') return job.error ?? 'The build failed';
   return `Building: ${STAGES[job.stage] ?? job.stage}…`;
+}
+
+/** The latest thing the build said it is doing, without its time ("Downloading SO1292_DTM_1m.tif: 12 MB of 35 MB (34%)"), or ''. */
+export function activityOf(job) {
+  const last = [...(job?.log ?? [])].reverse().find((l) => String(l).trim());
+  return last ? String(last).replace(/^\[\d\d:\d\d:\d\d\]\s*/, '').trim() : '';
+}
+
+/** 65000 -> '1:05', 3725000 -> '1:02:05'. */
+export function formatElapsed(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000)), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
+  return h ? `${h}:${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}` : `${m}:${String(r).padStart(2, '0')}`;
+}
+
+/** "Running for 1:05 · last update 3 s ago", and a hint when it has been quiet a while (some steps, like fitting the photo, say nothing until they finish). */
+export function timingText(elapsedMs, sinceNewsMs) {
+  const quiet = Math.floor(sinceNewsMs / 1000);
+  return `Running for ${formatElapsed(elapsedMs)} · last update ${quiet < 2 ? 'just now' : `${quiet} s ago`}${quiet >= QUIET_AFTER_S ? ' (this step takes a while without news, it is still working)' : ''}`;
 }
 
 /**
@@ -73,12 +93,26 @@ export const buildStep = {
     const root = host.root;
     root.className = 'build-card';
     for (;;) {
-      root.innerHTML = '<h2>Building your area</h2><div class="build-bar"><div data-bar></div></div><div data-msg class="build-msg">Starting…</div>';
-      const bar = root.querySelector('[data-bar]'), msg = root.querySelector('[data-msg]');
+      root.innerHTML = `<h2>Building your area</h2><div class="build-bar working" data-track><div data-bar></div></div><div data-msg class="build-msg">Starting…</div>
+        <div data-now class="build-now"></div><div data-time class="build-time"></div><pre data-log class="build-log"></pre>`;
+      const $ = (s) => root.querySelector(s), bar = $('[data-bar]'), msg = $('[data-msg]'), now = $('[data-now]'), time = $('[data-time]'), log = $('[data-log]'), track = $('[data-track]');
+      const started = Date.now(); let lastNews = started, lastKey = '';
+      const tick = () => { time.textContent = timingText(Date.now() - started, Date.now() - lastNews); };
+      tick(); const timer = setInterval(tick, 1000);
       try {
-        const out = await buildArea(ctx.bbox, { onProgress: (job) => { bar.style.width = `${job.percent ?? 0}%`; msg.textContent = describeJob(job); }, signal: host.signal });
+        const out = await buildArea(ctx.bbox, { onProgress: (job) => {
+          bar.style.width = `${job.percent ?? 0}%`; msg.textContent = describeJob(job);
+          const key = `${job.percent}|${job.stage}|${(job.log ?? []).length}|${(job.log ?? []).at(-1) ?? ''}`;
+          if (key !== lastKey) { lastKey = key; lastNews = Date.now(); }                   // anything new in the log or the bar counts as news
+          now.textContent = activityOf(job);
+          log.textContent = (job.log ?? []).slice(-LOG_LINES_SHOWN).join('\n');
+          track.classList.toggle('working', job.status === 'building' || job.status === 'queued');
+          tick();
+        }, signal: host.signal });
+        clearInterval(timer);
         return { ...ctx, area: out.id, bundleUrl: out.bundleUrl, bbox: out.bbox };
       } catch (e) {
+        clearInterval(timer);
         if (e.name === 'AbortError') throw e;
         root.innerHTML = `<h2>The build did not work</h2><div class="build-msg build-error">${esc(e.message)}</div><button data-retry>Try again</button>`;
         await new Promise((resolve) => { root.querySelector('[data-retry]').onclick = resolve; });

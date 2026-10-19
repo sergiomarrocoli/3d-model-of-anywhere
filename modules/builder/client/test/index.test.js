@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { BuildFailed, buildArea, buildStep, describeJob } from '../index.js';
+import { BuildFailed, QUIET_AFTER_S, activityOf, buildArea, buildStep, describeJob, formatElapsed, timingText } from '../index.js';
 
 const job = (over) => ({ id: 'e1n2w300h300', status: 'building', percent: 0, stage: 'terrain', bbox: [1, 2, 301, 302], bundle: null, error: null, ...over });
 const reply = (body, status = 200) => ({ ok: status < 400, status, json: async () => body });
@@ -65,7 +65,7 @@ describe('describeJob', () => {
 });
 
 describe('buildStep', () => {
-  const root = () => { const el = { className: '', innerHTML: '', q: {}, querySelector(s) { return (this.q[s] ??= { style: {}, textContent: '', onclick: null }); } }; return el; };
+  const root = () => { const el = { className: '', innerHTML: '', q: {}, querySelector(s) { return (this.q[s] ??= { style: {}, textContent: '', onclick: null, classList: { toggle(c, on) { this.last = [c, on]; } } }); } }; return el; };
   it('needs ctx.bbox', async () => {
     await expect(buildStep.run({}, { root: root() })).rejects.toThrow('ctx.bbox');
   });
@@ -87,10 +87,44 @@ describe('buildStep', () => {
     expect((await p).area).toBe('e1n2w300h300');
     globalThis.fetch = orig;
   });
+  it('shows what the build is doing, the log, and a running time, and keeps the bar moving while it works', async () => {
+    const log = ['[10:00:01] Welsh LiDAR: 2 tiles cover this area (DTM)', '[10:00:02] LiDAR tile 1 of 2 (DTM): SO1292_DTM_1m.tif', '[10:00:04] Downloading SO1292_DTM_1m.tif: 12 MB of 35 MB (34%)'];
+    const polls = [reply(job({ status: 'ready', percent: 100, bundle: '/b/', log }))];
+    const orig = globalThis.fetch; globalThis.fetch = vi.fn(async (url, opts) => (opts?.method === 'POST' ? reply(job({ status: 'building', percent: 8, log }), 202) : polls.shift()));
+    const r = root(), p = buildStep.run({ bbox: BBOX }, { root: r });
+    await new Promise((res) => setTimeout(res, 30));
+    expect(r.q['[data-now]'].textContent).toBe('Downloading SO1292_DTM_1m.tif: 12 MB of 35 MB (34%)');
+    expect(r.q['[data-log]'].textContent.split('\n')).toHaveLength(3); expect(r.q['[data-log]'].textContent).toContain('LiDAR tile 1 of 2');
+    expect(r.q['[data-time]'].textContent).toMatch(/^Running for 0:0\d · last update just now$/);
+    expect(r.q['[data-bar]'].style.width).toBe('8%'); expect(r.q['[data-track]'].classList.last).toEqual(['working', true]);
+    await p; globalThis.fetch = orig;
+    expect(r.q['[data-track]'].classList.last).toEqual(['working', false]);                         // finished: the stripes stop
+  });
   it('does not put markup from an error into the page', async () => {
     const orig = globalThis.fetch; globalThis.fetch = vi.fn(async () => reply({ error: '<img src=x onerror=alert(1)>' }, 400));
     const r = root(); buildStep.run({ bbox: BBOX }, { root: r }).catch(() => {});
     await new Promise((res) => setTimeout(res, 10)); globalThis.fetch = orig;
     expect(r.innerHTML).not.toContain('<img'); expect(r.innerHTML).toContain('&lt;img');
+  });
+});
+
+describe('what the build screen says it is doing', () => {
+  it('shows the latest log line without its time', () => {
+    expect(activityOf(job({ log: ['[14:02:11] Asking overpass-api.de for the buildings', '[14:02:12] Downloading SO1292_DTM_1m.tif: 12 MB of 35 MB (34%)'] }))).toBe('Downloading SO1292_DTM_1m.tif: 12 MB of 35 MB (34%)');
+    expect(activityOf(job({ log: ['no time here', '   ', ''] }))).toBe('no time here');
+    expect(activityOf(job({ log: [] }))).toBe(''); expect(activityOf(job())).toBe(''); expect(activityOf(null)).toBe('');
+  });
+  it('writes the time running as m:ss or h:mm:ss', () => {
+    expect(formatElapsed(0)).toBe('0:00'); expect(formatElapsed(65_000)).toBe('1:05'); expect(formatElapsed(3_725_000)).toBe('1:02:05'); expect(formatElapsed(-5)).toBe('0:00');
+  });
+  it('says how long since the last news, and reassures when it has been quiet a while', () => {
+    expect(timingText(65_000, 400)).toBe('Running for 1:05 · last update just now');
+    expect(timingText(65_000, 7_400)).toBe('Running for 1:05 · last update 7 s ago');
+    expect(timingText(120_000, QUIET_AFTER_S * 1000)).toMatch(/last update 15 s ago \(this step takes a while without news, it is still working\)/);
+  });
+  it('knows the stages the pipeline now reports', () => {
+    for (const stage of ['registering', 'cars', 'land cover', 'bundle']) expect(describeJob(job({ stage }))).not.toContain(stage === 'land cover' ? '  ' : `Building: ${stage}…`);
+    expect(describeJob(job({ stage: 'land cover' }))).toBe('Building: working out land cover…');
+    expect(describeJob(job({ stage: 'registering' }))).toBe('Building: fitting the photo to the map…');
   });
 });

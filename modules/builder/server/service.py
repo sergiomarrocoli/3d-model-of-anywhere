@@ -28,8 +28,12 @@ RETRY_AFTER_FAILURE_S = 30
 KEEP_LOG_LINES = 60
 
 # Rough progress from the pipeline's own log lines: (text it prints, percent, stage name).
-STAGES = [("DTM:", 20, "terrain"), ("Filled", 30, "terrain"), ("Buildings:", 45, "buildings"), ("Buildings after cleanup", 60, "buildings"),
-          ("Imagery fetched", 90, "imagery"), ("Cars removed", 93, "cars"), ("Land cover", 96, "land cover"), ("Wrote", 100, "done")]
+STAGES = [("DTM:", 20, "terrain"), ("Filled", 30, "terrain"), ("the buildings", 31, "buildings"), ("Buildings:", 45, "buildings"), ("Buildings after cleanup", 60, "buildings"),
+          ("Imagery fetched", 90, "imagery"), ("Fitting the photo", 91, "registering"), ("Cars removed", 93, "cars"), ("Working out the land cover", 94, "land cover"),
+          ("Land cover", 96, "land cover"), ("Writing the bundle", 98, "bundle"), ("Wrote", 100, "done")]
+# Counts the pipeline prints while it fetches, so the bar moves smoothly through the long stages: (pattern, first percent, how far it moves, stage).
+COUNTS = [(re.compile(r"LiDAR tile (\d+) of (\d+)"), 3, 16, "terrain", True),          # the tile being started: n - 1 are done
+          (re.compile(r"Imagery tiles: (\d+) of (\d+)"), 60, 29, "imagery", False)]    # n tiles are done
 
 
 class BuildError(ValueError):
@@ -113,14 +117,17 @@ def subprocess_runner(root, python=sys.executable, timeout=BUILD_TIMEOUT_S, remo
         proc = subprocess.Popen(cmd, cwd=str(root), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
         timer = threading.Timer(timeout, proc.kill)
         timer.start()
+        last = ""
         try:
             for line in proc.stdout:
                 on_line(line.rstrip())
+                if line.strip():
+                    last = line.strip()      # on a crash this is the exception's message: the reason to show
             code = proc.wait()
         finally:
             timer.cancel()
         if code != 0:
-            raise RuntimeError("the build failed" if code > 0 else "the build took too long and was stopped")
+            raise RuntimeError(("the build failed" + (f": {last[:300]}" if last else "")) if code > 0 else "the build took too long and was stopped")
     return run
 
 
@@ -215,6 +222,13 @@ class BuildService:
             for text, percent, stage in STAGES:
                 if text in line and percent > job.percent:
                     job.percent, job.stage = min(percent, 99), stage   # 100 is only set when the bundle exists
+            for pattern, first, span, stage, starting in COUNTS:
+                m = pattern.search(line)
+                if m:
+                    n, total = int(m.group(1)), max(int(m.group(2)), 1)
+                    percent = first + int(span * (n - 1 if starting else n) / total)
+                    if percent > job.percent:
+                        job.percent, job.stage = min(percent, 99), stage
 
     def wait_idle(self, timeout=10):
         """For tests: block until nothing is queued or building."""

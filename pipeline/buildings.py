@@ -14,6 +14,8 @@ from pyproj import Transformer
 from shapely.geometry import LineString, MultiPolygon, Polygon, box
 from shapely.ops import polygonize, transform, unary_union
 
+from pipeline.progress import say
+
 # Tried in order. The main instance can fail TLS on LibreSSL-based Pythons (e.g. macOS system Python).
 OVERPASS_URLS = [
     "https://overpass-api.de/api/interpreter",
@@ -73,17 +75,20 @@ class _Cached:
         return json.loads(self.text)
 
 
-def _overpass(query, cache_dir=None, ttl=None):
+def _overpass(query, cache_dir=None, ttl=None, what="OpenStreetMap data"):
     """POST an Overpass query, with a disk cache keyed by the query text so the same area is asked for once a week."""
     cache_dir = Path(CACHE_DIR if cache_dir is None else cache_dir)
     ttl = CACHE_TTL_S if ttl is None else ttl
     cached = cache_dir / (hashlib.sha1(query.encode()).hexdigest() + ".json")
     if cached.exists() and time.time() - cached.stat().st_mtime < ttl:
+        say(f"Using the saved copy of the {what}")
         return _Cached(cached.read_text())
 
     errors = []
     for attempt in range(3):
         for url in OVERPASS_URLS:
+            host = url.split("/")[2]
+            say(f"Asking {host} for the {what}" + (f" (attempt {attempt + 1})" if attempt else ""))
             try:
                 resp = requests.post(url, data={"data": query}, timeout=90,
                                      headers={"User-Agent": "uk-map-3d (github.com/sergiomarrocoli/uk-map-3d)"})
@@ -96,6 +101,7 @@ def _overpass(query, cache_dir=None, ttl=None):
                 return resp
             except (requests.RequestException, ValueError) as exc:
                 errors.append(f"{url}: {type(exc).__name__}")
+                say(f"{host} did not answer ({type(exc).__name__}); trying the next one")
         time.sleep(5 * (attempt + 1))  # public instances are often overloaded; back off and retry
     raise RuntimeError("All Overpass endpoints failed: " + "; ".join(errors))
 
@@ -110,7 +116,7 @@ def building_query(bbox):
 
 def fetch_buildings(bbox, out):
     """bbox = (minE, minN, maxE, maxN) in EPSG:27700. Writes GeoJSON (27700 metres) to `out`."""
-    resp = _overpass(building_query(bbox))
+    resp = _overpass(building_query(bbox), what="buildings")
 
     to_bng = Transformer.from_crs("EPSG:4326", CRS, always_xy=True).transform
     rows = []

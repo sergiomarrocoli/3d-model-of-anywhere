@@ -115,7 +115,7 @@ def query(bbox):
 
 
 def fetch_elements(bbox):
-    return osm._overpass(query(bbox)).json()["elements"]
+    return osm._overpass(query(bbox), what="roads, water and woods").json()["elements"]
 
 
 def shapes(elements):

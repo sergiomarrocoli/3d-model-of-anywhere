@@ -13,6 +13,8 @@ from pathlib import Path
 import numpy as np
 import rasterio
 import requests
+
+from pipeline.progress import download
 from rasterio.io import MemoryFile
 from rasterio.merge import merge
 from rasterio.transform import from_bounds
@@ -45,16 +47,7 @@ def tiles_for_bbox(bbox):
 
 
 def ensure_zip(cache=CACHE):
-    path = Path(cache) / ZIP_NAME
-    if not path.exists():
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with requests.get(ZIP_URL, stream=True, timeout=120) as r:
-            r.raise_for_status()
-            with open(path.with_suffix(".part"), "wb") as f:
-                for chunk in r.iter_content(1 << 20):
-                    f.write(chunk)
-        path.with_suffix(".part").rename(path)
-    return path
+    return download(ZIP_URL, Path(cache) / ZIP_NAME, "OS Terrain 50 (the height data for gaps in the LiDAR)")
 
 
 def _read_tile(zf, name):

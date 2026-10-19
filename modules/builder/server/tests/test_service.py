@@ -97,6 +97,51 @@ class TestBuilds:
         j2 = s2.request([0, 0, 500, 500]); assert s2.wait_idle()
         assert j2.status == "error" and j2.percent < 100
 
+    def test_the_bar_follows_tile_counts_through_the_long_stages(self, tmp_path):
+        seen = []
+        holder = {}
+
+        def runner(box, id, out_dir, on_line):
+            for line in ["[x] Welsh LiDAR: 4 tiles cover this area (DTM)", "[x] LiDAR tile 1 of 4 (DTM): a.tif", "[x] Downloading a.tif: 3 MB of 9 MB (33%)", "[x] LiDAR tile 3 of 4 (DTM): c.tif",
+                         "[x] LiDAR tile 1 of 4 (DSM): a.tif", "[x] DTM: Welsh Government LiDAR", "[x] Buildings after cleanup: 9", "[x] Imagery tiles: 100 of 400", "[x] Imagery tiles: 400 of 400", "[x] Imagery fetched"]:
+                on_line(line); seen.append((holder["job"].percent, holder["job"].stage))
+            d = out_dir / f"area_{id}"; d.mkdir(parents=True)
+            (d / "meta.json").write_text(json.dumps({"pipeline_version": V}))
+        s = BuildService(tmp_path, runner, V)
+        holder["job"] = s.request(BOX); assert s.wait_idle()
+        pct = [p for p, _ in seen]
+        assert pct[0] == 0 and pct[1] == 3 and pct[2] == 3                               # a line with no count moves nothing; tile 1 of 4 has none done
+        assert pct[3] == 3 + 16 * 2 // 4 and pct[4] == pct[3]                            # tile 3 of 4 has two done; the DSM pass starting again never takes it back
+        assert pct[5] == 20 and pct[6] == 60                                             # the stage lines still set their own marks
+        assert pct[7] == 60 + 29 * 100 // 400 and pct[8] == 60 + 29 and pct[9] == 90 and seen[7][1] == "imagery"
+        assert pct == sorted(pct)
+
+    def test_asking_for_the_buildings_is_the_buildings_stage(self, tmp_path):
+        seen = []
+        holder = {}
+
+        def runner(box, id, out_dir, on_line):
+            for line in ["[x] Filled 0.0% of the DTM from Terrain 50", "[x] Asking overpass-api.de for the buildings", "[x] Buildings: 254 from OpenStreetMap"]:
+                on_line(line); seen.append((holder["job"].percent, holder["job"].stage))
+            d = out_dir / f"area_{id}"; d.mkdir(parents=True)
+            (d / "meta.json").write_text(json.dumps({"pipeline_version": V}))
+        s = BuildService(tmp_path, runner, V)
+        holder["job"] = s.request(BOX); assert s.wait_idle()
+        assert seen == [(30, "terrain"), (31, "buildings"), (45, "buildings")]
+
+    def test_the_stages_with_no_count_have_marks_too(self, tmp_path):
+        seen = []
+        holder = {}
+
+        def runner(box, id, out_dir, on_line):
+            for line in ["[x] Imagery fetched", "[x] Fitting the photo to the map", "[x] Working out the land cover (roads, trees, water)", "[x] Land cover: grass 30%", "[x] Writing the bundle (heightmap)"]:
+                on_line(line); seen.append((holder["job"].percent, holder["job"].stage))
+            d = out_dir / f"area_{id}"; d.mkdir(parents=True)
+            (d / "meta.json").write_text(json.dumps({"pipeline_version": V}))
+        s = BuildService(tmp_path, runner, V)
+        holder["job"] = s.request(BOX); assert s.wait_idle()
+        assert seen == [(90, "imagery"), (91, "registering"), (94, "land cover"), (96, "land cover"), (98, "bundle")]
+
     def test_failures_are_reported_and_retried_after_a_pause(self, tmp_path):
         now = [1000.0]
         calls = []
@@ -142,6 +187,21 @@ class TestBuilds:
 
 
 class TestRunner:
+    def test_a_crash_says_why(self, tmp_path):
+        pkg = tmp_path / "pipeline"; pkg.mkdir(); (pkg / "__init__.py").write_text("")
+        (pkg / "build_area.py").write_text("print('[1] Asking overpass-api.de for the buildings', flush=True)\nraise RuntimeError('All Overpass endpoints failed: overpass-api.de: SSLError')\n")
+        seen = []
+        with pytest.raises(RuntimeError) as e:
+            svc.subprocess_runner(tmp_path, python="python3")((1, 2, 3, 4), "e1n2w2h2", tmp_path / "out", seen.append)
+        assert str(e.value) == "the build failed: RuntimeError: All Overpass endpoints failed: overpass-api.de: SSLError"
+        assert any("Traceback" in l for l in seen)                                            # the whole traceback still goes to the log
+
+    def test_a_crash_with_no_output_is_still_just_failed(self, tmp_path):
+        pkg = tmp_path / "pipeline"; pkg.mkdir(); (pkg / "__init__.py").write_text("")
+        (pkg / "build_area.py").write_text("import sys\nsys.exit(3)\n")
+        with pytest.raises(RuntimeError, match="^the build failed$"):
+            svc.subprocess_runner(tmp_path, python="python3")((1, 2, 3, 4), "e1n2w2h2", tmp_path / "out", lambda l: None)
+
     def test_runs_the_pipeline_with_only_numbers_and_streams_lines(self, tmp_path):
         script = tmp_path / "fake.py"
         script.write_text("import sys\nprint('[1] DTM: x', flush=True)\nprint(' '.join(sys.argv[1:]), flush=True)\nsys.exit(int(__import__('os').environ.get('EXIT', '0')))\n")
