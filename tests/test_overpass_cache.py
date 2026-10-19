@@ -118,3 +118,66 @@ def test_a_curl_answer_that_is_not_json_is_an_error_not_cached(tmp_path, monkeyp
     with pytest.raises(RuntimeError, match="All Overpass endpoints failed"):
         buildings._overpass("q", cache_dir=tmp_path)
     assert not list(tmp_path.glob("*.json"))
+
+
+def _said(monkeypatch):
+    said = []
+    monkeypatch.setattr(buildings, "say", said.append)
+    return said
+
+
+def test_the_log_says_why_a_server_did_not_answer(tmp_path, monkeypatch):
+    said = _said(monkeypatch)
+    monkeypatch.setattr(buildings.time, "sleep", lambda s: None)
+
+    def post(url, **kw):
+        if "kumi" in url:
+            return Resp()
+        raise buildings.requests.exceptions.HTTPError("500 Server Error: Internal Server Error for url: " + url)
+    monkeypatch.setattr(buildings.requests, "post", post)
+    buildings._overpass("q", cache_dir=tmp_path)
+    assert any("did not answer (HTTPError: 500 Server Error: Internal Server Error" in line for line in said)
+
+
+def test_a_rate_limit_waits_and_asks_the_same_server_again_before_trying_a_mirror(tmp_path, monkeypatch):
+    said, slept, runs = _said(monkeypatch), [], []
+    monkeypatch.setattr(buildings.time, "sleep", slept.append)
+    monkeypatch.setattr(buildings.shutil, "which", lambda name: "/usr/bin/curl")
+    posted = _ssl_fails(monkeypatch)
+    monkeypatch.setattr(buildings.time, "sleep", slept.append)
+
+    def run(cmd, **kw):
+        runs.append(cmd)
+        return _Done("", 22, "curl: (22) The requested URL returned error: 429") if len(runs) == 1 else _Done('{"elements": []}')
+    monkeypatch.setattr(buildings.subprocess, "run", run)
+    assert buildings._overpass("q", cache_dir=tmp_path).json() == {"elements": []}
+    assert len(runs) == 2 and posted == [buildings.OVERPASS_URLS[0]] * 2                  # the main server twice, never a mirror
+    assert slept == [buildings.RATE_LIMIT_WAIT_S]
+    assert any("rate limiting us" in line and "429" in line for line in said) and any(line.endswith("again") for line in said)
+
+
+def test_only_a_rate_limit_gets_a_second_go_at_the_same_server(tmp_path, monkeypatch):
+    _said(monkeypatch)
+    monkeypatch.setattr(buildings.time, "sleep", lambda s: None)
+    asked = []
+
+    def post(url, **kw):
+        asked.append(url)
+        raise buildings.requests.exceptions.HTTPError("503 Service Unavailable")
+    monkeypatch.setattr(buildings.requests, "post", post)
+    with pytest.raises(RuntimeError, match="503 Service Unavailable"):
+        buildings._overpass("q", cache_dir=tmp_path)
+    assert asked == buildings.OVERPASS_URLS * 3                                           # each server once per round: no waiting around for a 503
+
+
+def test_a_rate_limit_that_goes_on_still_ends_in_a_clear_error(tmp_path, monkeypatch):
+    _said(monkeypatch)
+    slept = []
+    monkeypatch.setattr(buildings.time, "sleep", slept.append)
+
+    def post(url, **kw):
+        raise buildings.requests.exceptions.HTTPError("429 Client Error: Too Many Requests")
+    monkeypatch.setattr(buildings.requests, "post", post)
+    with pytest.raises(RuntimeError, match="All Overpass endpoints failed.*429"):
+        buildings._overpass("q", cache_dir=tmp_path)
+    assert slept.count(buildings.RATE_LIMIT_WAIT_S) == 3 * len(buildings.OVERPASS_URLS)        # one wait per server per round, no more

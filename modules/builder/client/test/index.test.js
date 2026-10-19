@@ -100,6 +100,14 @@ describe('buildStep', () => {
     await p; globalThis.fetch = orig;
     expect(r.q['[data-track]'].classList.last).toEqual(['working', false]);                         // finished: the stripes stop
   });
+  it('counts from the build\'s own start (what the service says), not from when this page began waiting', async () => {
+    const polls = [reply(job({ status: 'ready', percent: 100, bundle: '/b/', elapsed_s: 140 }))];
+    const orig = globalThis.fetch; globalThis.fetch = vi.fn(async (url, opts) => (opts?.method === 'POST' ? reply(job({ status: 'building', percent: 60, elapsed_s: 125.4 }), 202) : polls.shift()));
+    const r = root(), p = buildStep.run({ bbox: BBOX }, { root: r });
+    await new Promise((res) => setTimeout(res, 30));
+    expect(r.q['[data-time]'].textContent).toMatch(/^Running for 2:05 · /);                              // 125 s, though this page has only just started
+    await p; globalThis.fetch = orig;
+  });
   it('does not put markup from an error into the page', async () => {
     const orig = globalThis.fetch; globalThis.fetch = vi.fn(async () => reply({ error: '<img src=x onerror=alert(1)>' }, 400));
     const r = root(); buildStep.run({ bbox: BBOX }, { root: r }).catch(() => {});

@@ -96,12 +96,13 @@ export const buildStep = {
       root.innerHTML = `<h2>Building your area</h2><div class="build-bar working" data-track><div data-bar></div></div><div data-msg class="build-msg">Starting…</div>
         <div data-now class="build-now"></div><div data-time class="build-time"></div><pre data-log class="build-log"></pre>`;
       const $ = (s) => root.querySelector(s), bar = $('[data-bar]'), msg = $('[data-msg]'), now = $('[data-now]'), time = $('[data-time]'), log = $('[data-log]'), track = $('[data-track]');
-      const started = Date.now(); let lastNews = started, lastKey = '';
-      const tick = () => { time.textContent = timingText(Date.now() - started, Date.now() - lastNews); };
+      const started = Date.now(); let lastNews = started, lastKey = '', served = null;                   // served: how long the service says the build had been running, and when we heard
+      const tick = () => { time.textContent = timingText(served ? served.ms + (Date.now() - served.at) : Date.now() - started, Date.now() - lastNews); };
       tick(); const timer = setInterval(tick, 1000);
       try {
         const out = await buildArea(ctx.bbox, { onProgress: (job) => {
           bar.style.width = `${job.percent ?? 0}%`; msg.textContent = describeJob(job);
+          if (Number.isFinite(job.elapsed_s)) served = { ms: job.elapsed_s * 1000, at: Date.now() };       // the build's own clock, not this page's
           const key = `${job.percent}|${job.stage}|${(job.log ?? []).length}|${(job.log ?? []).at(-1) ?? ''}`;
           if (key !== lastKey) { lastKey = key; lastNews = Date.now(); }                   // anything new in the log or the bar counts as news
           now.textContent = activityOf(job);

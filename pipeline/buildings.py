@@ -81,6 +81,7 @@ class _Cached:
 
 
 USER_AGENT = "uk-map-3d (github.com/sergiomarrocoli/uk-map-3d)"
+RATE_LIMIT_WAIT_S = 20     # a 429 from a server: wait this long and ask the same one again once, before trying a mirror
 CURL_TIMEOUT_S = 150       # overpass-api.de can take over 30 s to answer even a trivial query when it is busy
 
 
@@ -97,6 +98,12 @@ def _curl_post(url, query, timeout=CURL_TIMEOUT_S):
     return _Cached(done.stdout)
 
 
+def _rate_limited(exc):
+    """Did the server say 'too many requests' (HTTP 429), as a requests error or through curl's message?"""
+    text = str(exc)
+    return "429" in text or "Too Many Requests" in text
+
+
 def _overpass(query, cache_dir=None, ttl=None, what="OpenStreetMap data"):
     """POST an Overpass query, with a disk cache keyed by the query text so the same area is asked for once a week."""
     cache_dir = Path(CACHE_DIR if cache_dir is None else cache_dir)
@@ -110,23 +117,30 @@ def _overpass(query, cache_dir=None, ttl=None, what="OpenStreetMap data"):
     for attempt in range(3):
         for url in OVERPASS_URLS:
             host = url.split("/")[2]
-            say(f"Asking {host} for the {what}" + (f" (attempt {attempt + 1})" if attempt else ""))
-            try:
+            for go in range(2):                          # a second go at the same server, only after a rate limit
+                say(f"Asking {host} for the {what}" + (f" (attempt {attempt + 1})" if attempt else "") + (" again" if go else ""))
                 try:
-                    resp = requests.post(url, data={"data": query}, timeout=90, headers={"User-Agent": USER_AGENT})
-                except requests.exceptions.SSLError:
-                    say(f"Python cannot make the TLS connection to {host}; asking through curl instead (this can take a minute)")
-                    resp = _curl_post(url, query)
-                resp.raise_for_status()
-                resp.json()
-                cache_dir.mkdir(parents=True, exist_ok=True)
-                tmp = cached.with_suffix(".tmp")
-                tmp.write_text(resp.text)
-                tmp.replace(cached)  # atomic, so a half-written file is never read
-                return resp
-            except (requests.RequestException, ValueError) as exc:
-                errors.append(f"{url}: {type(exc).__name__}")
-                say(f"{host} did not answer ({type(exc).__name__}); trying the next one")
+                    try:
+                        resp = requests.post(url, data={"data": query}, timeout=90, headers={"User-Agent": USER_AGENT})
+                    except requests.exceptions.SSLError:
+                        say(f"Python cannot make the TLS connection to {host}; asking through curl instead (this can take a minute)")
+                        resp = _curl_post(url, query)
+                    resp.raise_for_status()
+                    resp.json()
+                    cache_dir.mkdir(parents=True, exist_ok=True)
+                    tmp = cached.with_suffix(".tmp")
+                    tmp.write_text(resp.text)
+                    tmp.replace(cached)  # atomic, so a half-written file is never read
+                    return resp
+                except (requests.RequestException, ValueError) as exc:
+                    reason = f"{type(exc).__name__}: {' '.join(str(exc).split())[:150]}".rstrip(": ")
+                    errors.append(f"{url}: {reason}")
+                    if go == 0 and _rate_limited(exc):
+                        say(f"{host} is rate limiting us ({reason}); waiting {RATE_LIMIT_WAIT_S} s, then asking it again")
+                        time.sleep(RATE_LIMIT_WAIT_S)
+                        continue
+                    say(f"{host} did not answer ({reason}); trying the next one")
+                    break
         time.sleep(5 * (attempt + 1))  # public instances are often overloaded; back off and retry
     raise RuntimeError("All Overpass endpoints failed: " + "; ".join(errors))
 
