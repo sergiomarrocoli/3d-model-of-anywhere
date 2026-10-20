@@ -6,7 +6,7 @@ import urllib.request
 import pytest
 
 import service as svc
-from service import BuildError, BuildService, area_id, bundles_dir_setting, cars_setting, imagery_setting, normalise_box, on_unless_off, snap, valid_id
+from service import BuildError, BuildService, area_id, bundles_dir_setting, allowed_imagery_setting, cars_setting, imagery_of, normalise_box, on_unless_off, snap, valid_id
 
 V = 3
 
@@ -22,7 +22,7 @@ def fake_runner(calls, fail=None, gate=None, lines=("[00:00:01] DTM: EA LiDAR (1
         if fail:
             raise RuntimeError(fail)
         d = out_dir / f"area_{id}"; d.mkdir(parents=True)
-        (d / "meta.json").write_text(json.dumps({"pipeline_version": V}))
+        (d / "meta.json").write_text(json.dumps({"pipeline_version": V, "imagery_source": imagery_of(id)}))
     return run
 
 
@@ -77,7 +77,7 @@ class TestBox:
             normalise_box([1000, 1000, 1000 + 2100, 1000 + 2000])
 
     def test_valid_id(self):
-        assert valid_id("e310450n290875w1000h1000") and not valid_id("../etc") and not valid_id("bath") and not valid_id("e1n2w3h4/..")
+        assert valid_id("e310450n290875w1000h1000") and valid_id("e310450n290875w1000h1000-stylised") and not valid_id("e1n2w3h4-esri") and not valid_id("../etc") and not valid_id("bath") and not valid_id("e1n2w3h4/..")
 
 
 class TestBuilds:
@@ -250,7 +250,7 @@ class TestRunner:
         pkg = tmp_path / "pipeline"; pkg.mkdir(); (pkg / "__init__.py").write_text("")
         (pkg / "build_area.py").write_text(script.read_text())
         run((1, 2, 3, 4), "e1n2w2h2", tmp_path / "out", seen.append)
-        assert seen[0] == "[1] DTM: x" and seen[1] == f"--bbox 1 2 3 4 --id e1n2w2h2 --out {tmp_path / 'out'}"
+        assert seen[0] == "[1] DTM: x" and seen[1] == f"--bbox 1 2 3 4 --id e1n2w2h2 --out {tmp_path / 'out'} --imagery esri"
 
     def test_a_failing_build_raises(self, tmp_path):
         pkg = tmp_path / "pipeline"; pkg.mkdir(); (pkg / "__init__.py").write_text("")
@@ -312,7 +312,7 @@ class TestCarsSetting:
         assert "--fill-footprints" in seen[1] and "--register" not in seen[1]
         assert "--fill-footprints" not in seen[2] and "--register" not in seen[2]               # the library default is the plain build; serve.py turns them on
 
-    def test_the_runner_asks_for_the_stylised_ground_when_told_to(self, tmp_path):
+    def test_the_runner_asks_for_the_ground_the_id_names_and_skips_the_photo_steps_for_the_drawn_one(self, tmp_path):
         seen = []
         class Fake:
             def __init__(self, cmd, **kw):
@@ -323,21 +323,39 @@ class TestCarsSetting:
         orig = svc.subprocess.Popen
         svc.subprocess.Popen = Fake
         try:
-            svc.subprocess_runner(tmp_path, imagery="stylised")((1, 2, 3, 4), "e1n2w2h2", tmp_path, lambda l: None)
-            svc.subprocess_runner(tmp_path)((1, 2, 3, 4), "e1n2w2h2", tmp_path, lambda l: None)
+            run = svc.subprocess_runner(tmp_path, remove_cars=True, fill_footprints=True, register=True)
+            run((1, 2, 3, 4), "e1n2w2h2-stylised", tmp_path, lambda l: None)
+            run((1, 2, 3, 4), "e1n2w2h2", tmp_path, lambda l: None)
         finally:
             svc.subprocess.Popen = orig
-        assert seen[0][-2:] == ["--imagery", "stylised"] and "--imagery" not in seen[1]
-        assert [imagery_setting(v) for v in (None, "", "esri", "photo", "stylised", " Stylized ", "drawn")] == ["esri", "esri", "esri", "esri", "stylised", "stylised", "stylised"]
+        assert seen[0][seen[0].index("--imagery") + 1] == "stylised" and "--remove-cars" not in seen[0] and "--register" not in seen[0] and "--fill-footprints" in seen[0]
+        assert seen[1][seen[1].index("--imagery") + 1] == "esri" and "--remove-cars" in seen[1] and "--register" in seen[1]
+
+    def test_the_services_imagery_setting_narrows_what_it_builds(self):
+        assert allowed_imagery_setting(None) == allowed_imagery_setting("") == ("esri", "stylised")
+        assert allowed_imagery_setting(" Stylized ") == ("stylised",) and allowed_imagery_setting("esri, drawn") == ("esri", "stylised")
+        with pytest.raises(RuntimeError, match="IMAGERY"):
+            allowed_imagery_setting("satellite")
+
+    def test_a_request_names_its_imagery_and_gets_its_own_bundle(self, tmp_path):
+        calls = []
+        s = BuildService(tmp_path, fake_runner(calls), V)
+        photo, drawn = s.request(BOX, "a", "esri"), s.request(BOX, "a", "stylised")
+        assert s.wait_idle() and photo.id != drawn.id and drawn.id == photo.id + "-stylised" and imagery_of(drawn.id) == "stylised"
+        assert calls == [photo.id, drawn.id] and drawn.public()["imagery"] == "stylised"
+        with pytest.raises(BuildError, match="imagery must be"):
+            s.request(BOX, "a", "satellite")
+        with pytest.raises(BuildError, match="does not build with esri"):
+            BuildService(tmp_path, fake_runner([]), V, allowed=("stylised",)).request(BOX, "a", "esri")
 
     def test_a_photo_build_and_a_drawn_one_of_the_same_area_are_different_bundles(self, tmp_path):
-        d = tmp_path / "area_e310450n290875w1000h1000"; d.mkdir()
+        d = tmp_path / "area_e310450n290875w1000h1000-stylised"; d.mkdir()
         (d / "meta.json").write_text(json.dumps({"pipeline_version": V, "imagery_source": "stylised"}))
-        assert BuildService(tmp_path, lambda *a: None, V, imagery="stylised").cached("e310450n290875w1000h1000") is True
-        assert BuildService(tmp_path, lambda *a: None, V).cached("e310450n290875w1000h1000") is False              # asked for a photo: build it
-        (d / "meta.json").write_text(json.dumps({"pipeline_version": V}))                                           # an older bundle has no imagery_source: it is a photo
-        assert BuildService(tmp_path, lambda *a: None, V).cached("e310450n290875w1000h1000") is True
-        assert BuildService(tmp_path, lambda *a: None, V, imagery="stylised").cached("e310450n290875w1000h1000") is False
+        s = BuildService(tmp_path, lambda *a: None, V)
+        assert s.cached("e310450n290875w1000h1000-stylised") is True
+        assert s.cached("e310450n290875w1000h1000") is False              # the photo build of that area is not there
+        (d / "meta.json").write_text(json.dumps({"pipeline_version": V}))                                           # no imagery_source: a photo, so not what a "-stylised" id names
+        assert s.cached("e310450n290875w1000h1000-stylised") is False
 
     def test_the_settings_are_on_unless_turned_off(self):
         assert on_unless_off(None) and on_unless_off("") and on_unless_off("1") and on_unless_off("yes")

@@ -18,13 +18,13 @@ The dev server forwards `/api` to it (`client/vite.config.js`), so with both run
 
 | | |
 |---|---|
-| `POST /api/builds` `{"bbox": [minE, minN, maxE, maxN]}` | **200** if that area is already built, **202** if queued; returns a job |
+| `POST /api/builds` `{"bbox": [minE, minN, maxE, maxN], "imagery": "esri" or "stylised"}` | **400** without an `imagery` (no default); **200** if that area is already built, **202** if queued; returns a job |
 | `GET /api/builds/<id>` | `status` (`queued`, `building`, `ready`, `error`), `percent`, `stage`, last log lines, `queue_position`, `error`, and `bundle` (`/bundles/area_<id>/`) when ready |
 | `GET /api/maps` | ids of every built area |
 | `GET /api/health` | `{ok, pipeline_version}` |
 
 ```
-$ curl -X POST localhost:8788/api/builds -H 'content-type: application/json' -d '{"bbox":[310700,291130,311200,291630]}'
+$ curl -X POST localhost:8788/api/builds -H 'content-type: application/json' -d '{"bbox":[310700,291130,311200,291630],"imagery":"stylised"}'
 {"id":"e310700n291125w500h500","status":"queued","bbox":[310700,291125,311200,291625],...}
 $ curl localhost:8788/api/builds/e310700n291125w500h500
 {"status":"building","percent":60,"stage":"buildings",...}   ->   {"status":"ready","percent":100,"bundle":"/bundles/area_e310700n291125w500h500/"}
@@ -32,11 +32,13 @@ $ curl localhost:8788/api/builds/e310700n291125w500h500
 
 ## What a build includes
 
-Each area is built with the pipeline's three optional steps on: OS Open Map Local buildings are added where OSM has none (`--fill-footprints`: OSM leaves whole streets unmapped, and a house with no footprint has no 3D model), the aerial photo is fitted to the grid and the LiDAR so roofs line up with their outlines (`--register`), and parked cars are painted out of the photo when the detector is installed. The service says which are on in its first line. `FILL_FOOTPRINTS=0`, `REGISTER_IMAGERY=0` and `REMOVE_CARS=0` turn them off. The first build in a new 100 km grid square downloads that square's Open Map Local file (40 to 120 MB, once, shown on the build screen). Both of the first two need LiDAR (England and Wales); elsewhere they say so in the log and do nothing.
+Each area is built with the pipeline's three optional steps on: OS Open Map Local buildings are added where OSM has none (`--fill-footprints`: OSM leaves whole streets unmapped, and a house with no footprint has no 3D model), the aerial photo (when that is the chosen ground) is fitted to the grid and the LiDAR so roofs line up with their outlines (`--register`), and parked cars are painted out of the photo when the detector is installed. The service says which are on in its first line. `FILL_FOOTPRINTS=0`, `REGISTER_IMAGERY=0` and `REMOVE_CARS=0` turn them off. The first build in a new 100 km grid square downloads that square's Open Map Local file (40 to 120 MB, once, shown on the build screen). Both of the first two need LiDAR (England and Wales); elsewhere they say so in the log and do nothing.
 
-## Stylised ground
+## Choosing the ground
 
-`IMAGERY=stylised` builds every area with the ground drawn from open data instead of the Esri photograph (`--imagery stylised`, see the main README), so what you build can be published: no photograph is fetched, and the photo steps (registration, removing cars) do nothing. A photo build and a drawn one of the same area are different bundles: asking for the other kind rebuilds it. The service's first line says which it is doing.
+Every request names its ground texture, `"imagery": "esri"` (the Esri photograph, development use only) or `"stylised"` (drawn from open data, publishable; see the main README); there is no default, and a request without one is a 400. The build screen (`buildStep`) asks the user first, unless `ctx.imagery` is already set. The two are different bundles of the same area: the drawn one's id ends `-stylised` (`e310700n291125w500h500-stylised`), so both can exist, and the photo steps (registration, removing cars) only run for `esri`. The job reports its `imagery`.
+
+`IMAGERY=stylised` makes a service refuse the photograph (for a public deployment); `IMAGERY=esri` the reverse; unset it offers both. The service's first line says what it offers.
 
 ## Where areas are written
 
@@ -74,7 +76,7 @@ import { buildArea, buildStep } from '@builder';
 const { id, bundleUrl } = await buildArea([minE, minN, maxE, maxN], { onProgress: (job) => ... });  // POSTs, then polls
 ```
 
-`buildArea` takes a box and gives back a bundle URL; it knows nothing about the picker or the game. A dropped poll is
+`buildArea` takes a box and the imagery (`{ imagery: 'stylised' }`, required) and gives back a bundle URL; it knows nothing about the picker or the game. A dropped poll is
 retried, a refused or failed build becomes a readable error, the wait can be aborted (the build carries on and is cached).
 `buildStep` is the same as a flow step (see `../README.md`): it needs `ctx.bbox`, shows a progress bar (queue position,
 then terrain, buildings, imagery), and adds `ctx.area` and `ctx.bundleUrl`; on failure it shows the reason and **Try again**.

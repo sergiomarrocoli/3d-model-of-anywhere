@@ -42,12 +42,12 @@ def test_health_and_unknown_routes(api):
 
 
 def test_build_then_poll_then_cached(api):
-    code, job = api("POST", "/api/builds", {"bbox": BOX})
+    code, job = api("POST", "/api/builds", {"bbox": BOX, "imagery": "esri"})
     assert code == 202 and job["id"] == ID and job["status"] in ("queued", "building") and job["bbox"] == BOX
     assert api.svc.wait_idle()
     code, done = api("GET", f"/api/builds/{ID}")
     assert code == 200 and done["status"] == "ready" and done["percent"] == 100 and done["bundle"] == f"/bundles/area_{ID}/"
-    code, again = api("POST", "/api/builds", {"bbox": BOX})
+    code, again = api("POST", "/api/builds", {"bbox": BOX, "imagery": "esri"})
     assert code == 200 and again["status"] == "ready" and api.calls == [ID]       # 200 not 202, and nothing rebuilt
     assert api("GET", "/api/maps") == (200, [ID])
 
@@ -58,26 +58,26 @@ def test_unknown_and_malformed_ids_are_404(api):
     assert api("GET", "/api/builds/bath")[0] == 404
 
 
-@pytest.mark.parametrize("raw", [b"not json", b"[]", b'{"nope": 1}', b'{"bbox": "x"}', b"", b"x" * 5000])
+@pytest.mark.parametrize("raw", [b"not json", b"[]", b'{"nope": 1}', b'{"bbox": "x"}', b'{"bbox": [0, 0, 500, 500]}', b"", b"x" * 5000])
 def test_bad_bodies_are_400(api, raw):
     assert api("POST", "/api/builds", raw=raw)[0] == 400
 
 
 def test_bad_boxes_are_400_with_a_reason(api):
-    code, body = api("POST", "/api/builds", {"bbox": [0, 0, 50000, 50000]})
+    code, body = api("POST", "/api/builds", {"bbox": [0, 0, 50000, 50000], "imagery": "esri"})
     assert code == 400 and "between 200 m and 4000 m" in body["error"]
-    code, body = api("POST", "/api/builds", {"bbox": [1000, 1000, 4000, 3000]})            # 3 x 2 km: each side fine, too much area
+    code, body = api("POST", "/api/builds", {"bbox": [1000, 1000, 4000, 3000], "imagery": "esri"})            # 3 x 2 km: each side fine, too much area
     assert code == 400 and "at most 4 km²" in body["error"] and "6.00 km²" in body["error"]
-    code, body = api("POST", "/api/builds", {"bbox": [-5000, 0, -4000, 1000]})
+    code, body = api("POST", "/api/builds", {"bbox": [-5000, 0, -4000, 1000], "imagery": "esri"})
     assert code == 400 and "outside Great Britain" in body["error"]
 
 
 def test_too_many_builds_from_one_client_is_429(api):
     api.gate.clear()
     mk = lambda i: [1000 + i * 3000, 1000, 2000 + i * 3000, 2000]
-    assert api("POST", "/api/builds", {"bbox": mk(0)})[0] == 202 and api("POST", "/api/builds", {"bbox": mk(1)})[0] == 202
-    code, body = api("POST", "/api/builds", {"bbox": mk(2)})
+    assert api("POST", "/api/builds", {"bbox": mk(0), "imagery": "esri"})[0] == 202 and api("POST", "/api/builds", {"bbox": mk(1), "imagery": "esri"})[0] == 202
+    code, body = api("POST", "/api/builds", {"bbox": mk(2), "imagery": "esri"})
     assert code == 429 and "in progress" in body["error"]
     # a different client (via a local proxy's X-Forwarded-For) is counted separately
-    assert api("POST", "/api/builds", {"bbox": mk(3)}, headers={"X-Forwarded-For": "203.0.113.9"})[0] == 202
+    assert api("POST", "/api/builds", {"bbox": mk(3), "imagery": "esri"}, headers={"X-Forwarded-For": "203.0.113.9"})[0] == 202
     api.gate.set(); assert api.svc.wait_idle(15)

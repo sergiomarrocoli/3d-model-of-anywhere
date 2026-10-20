@@ -1,12 +1,18 @@
 // Builder module, client side: ask the build service for an area and wait for it. Knows nothing about the picker or the
 // game: it takes a bounding box in grid metres and gives back a bundle URL.
-//   buildArea(bbox, opts)  the plain API (a promise, progress callback)
-//   buildStep              the same as a flow step: shows progress, fills ctx.area / ctx.bundleUrl
+//   buildArea(bbox, opts)  the plain API (a promise, progress callback); opts.imagery is required
+//   buildStep              the same as a flow step: asks which ground imagery to use (unless ctx.imagery is set), shows progress, fills ctx.area / ctx.bundleUrl
 import './build.css';
 
 export const POLL_MS = 1000;
 
 export class BuildFailed extends Error {}
+
+/** The ground textures a build can use. There is no default: whoever builds picks one (the Esri photograph may not be published). */
+export const IMAGERY_CHOICES = [
+  { id: 'stylised', title: 'Drawn from open data', note: 'Flat colours painted from land cover and LiDAR. Open licences, so what you build can be published.' },
+  { id: 'esri', title: 'Esri aerial photograph', note: 'Real photographs. Esri World Imagery is for development use only: do not publish screenshots or video made with it.' },
+];
 
 const jsonOrError = async (res) => {
   let body = null;
@@ -18,15 +24,17 @@ const jsonOrError = async (res) => {
 /**
  * Request a build and poll until it is ready.
  * @param {number[]} bbox  [minE, minN, maxE, maxN] in OS grid metres
- * @param {object} [o]
+ * @param {object} o
+ * @param {'stylised'|'esri'} o.imagery        the ground texture: drawn from open data, or the Esri photograph (required: no default)
  * @param {(job:object)=>void} [o.onProgress]  called with every job update (status, percent, stage, queue_position...)
  * @param {AbortSignal} [o.signal]             stop waiting (the build itself carries on and is cached)
  * @returns {Promise<{id:string, bundleUrl:string, bbox:number[], cached:boolean}>}
  */
-export async function buildArea(bbox, { onProgress = () => {}, signal, fetchImpl = globalThis.fetch, pollMs = POLL_MS, base = '/api' } = {}) {
+export async function buildArea(bbox, { imagery, onProgress = () => {}, signal, fetchImpl = globalThis.fetch, pollMs = POLL_MS, base = '/api' } = {}) {
+  if (!IMAGERY_CHOICES.some((c) => c.id === imagery)) throw new BuildFailed(`choose the ground imagery: ${IMAGERY_CHOICES.map((c) => c.id).join(' or ')}`);
   let job;
   try {
-    job = await jsonOrError(await fetchImpl(`${base}/builds`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bbox }), signal }));
+    job = await jsonOrError(await fetchImpl(`${base}/builds`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bbox, imagery }), signal }));
   } catch (e) {
     if (e instanceof BuildFailed || e.name === 'AbortError') throw e;
     throw new BuildFailed('could not reach the build service (is it running?)');
@@ -82,9 +90,19 @@ export function timingText(elapsedMs, sinceNewsMs) {
   return `Running for ${formatElapsed(elapsedMs)} · last update ${quiet < 2 ? 'just now' : `${quiet} s ago`}${quiet >= QUIET_AFTER_S ? ' (this step takes a while without news, it is still working)' : ''}`;
 }
 
+/** Show the choice of ground imagery in `root` and resolve with the id picked. */
+function chooseImagery(root, signal) {
+  root.className = 'build-card';
+  root.innerHTML = `<h2>Choose the ground imagery</h2><div class="build-choices">${IMAGERY_CHOICES.map((c) => `<button data-imagery="${c.id}" class="build-choice"><strong>${esc(c.title)}</strong><span>${esc(c.note)}</span></button>`).join('')}</div>`;
+  return new Promise((resolve, reject) => {
+    signal?.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })), { once: true });
+    root.querySelectorAll('[data-imagery]').forEach((b) => { b.onclick = () => resolve(b.dataset.imagery); });
+  });
+}
+
 /**
- * Flow step: needs ctx.bbox, adds ctx.area (build id) and ctx.bundleUrl. Renders into host.root: a progress bar, and
- * on failure the reason with Try again.
+ * Flow step: needs ctx.bbox, adds ctx.area (build id), ctx.bundleUrl and ctx.imagery. Renders into host.root: first the choice of
+ * ground imagery (skipped when ctx.imagery is already set), then a progress bar, and on failure the reason with Try again.
  */
 export const buildStep = {
   name: 'build',
@@ -92,6 +110,7 @@ export const buildStep = {
     if (!Array.isArray(ctx.bbox)) throw new BuildFailed('the build step needs ctx.bbox (the picker step sets it)');
     const root = host.root;
     root.className = 'build-card';
+    const imagery = ctx.imagery ?? await chooseImagery(root, host.signal);
     for (;;) {
       root.innerHTML = `<h2>Building your area</h2><div class="build-bar working" data-track><div data-bar></div></div><div data-msg class="build-msg">Starting…</div>
         <div data-now class="build-now"></div><div data-time class="build-time"></div><pre data-log class="build-log"></pre>`;
@@ -100,7 +119,7 @@ export const buildStep = {
       const tick = () => { time.textContent = timingText(served ? served.ms + (Date.now() - served.at) : Date.now() - started, Date.now() - lastNews); };
       tick(); const timer = setInterval(tick, 1000);
       try {
-        const out = await buildArea(ctx.bbox, { onProgress: (job) => {
+        const out = await buildArea(ctx.bbox, { imagery, onProgress: (job) => {
           bar.style.width = `${job.percent ?? 0}%`; msg.textContent = describeJob(job);
           if (Number.isFinite(job.elapsed_s)) served = { ms: job.elapsed_s * 1000, at: Date.now() };       // the build's own clock, not this page's
           const key = `${job.percent}|${job.stage}|${(job.log ?? []).length}|${(job.log ?? []).at(-1) ?? ''}`;
@@ -111,7 +130,7 @@ export const buildStep = {
           tick();
         }, signal: host.signal });
         clearInterval(timer);
-        return { ...ctx, area: out.id, bundleUrl: out.bundleUrl, bbox: out.bbox };
+        return { ...ctx, area: out.id, bundleUrl: out.bundleUrl, bbox: out.bbox, imagery };
       } catch (e) {
         clearInterval(timer);
         if (e.name === 'AbortError') throw e;

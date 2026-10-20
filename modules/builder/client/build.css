@@ -13,3 +13,7 @@
 .build-bar.working > div { background-image: linear-gradient(135deg, rgba(255, 255, 255, .18) 25%, transparent 25%, transparent 50%, rgba(255, 255, 255, .18) 50%, rgba(255, 255, 255, .18) 75%, transparent 75%); background-size: 22px 22px; animation: build-stripes .9s linear infinite; }
 @keyframes build-stripes { to { background-position: 22px 0; } }
 @media (prefers-reduced-motion: reduce) { .build-bar.working > div { animation: none; } }
+.build-choices { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; max-width: 86vw; }
+.build-card .build-choice { display: flex; flex-direction: column; gap: 6px; width: 260px; padding: 14px 16px; text-align: left; background: #1b1e24; border: 1px solid #3a3f4a; }
+.build-card .build-choice:hover, .build-card .build-choice:focus-visible { border-color: #2b6cb0; background: #20252d; }
+.build-choice span { font-size: 12.5px; opacity: .7; }

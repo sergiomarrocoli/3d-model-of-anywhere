@@ -1,6 +1,6 @@
 """HTTP face of the build service. Run from the repo root:  python3 modules/builder/server/serve.py
 
-  POST /api/builds        {"bbox": [minE, minN, maxE, maxN]}   -> 200 (cached, ready) or 202 (queued) + job
+  POST /api/builds        {"bbox": [minE, minN, maxE, maxN], "imagery": "esri" | "stylised"}   -> 200 (cached, ready) or 202 (queued) + job
   GET  /api/builds/<id>   status, percent, stage, last log lines, bundle url when ready
   GET  /api/maps          ids of every built area
   GET  /api/health
@@ -15,7 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from service import BuildError, BuildService, bundles_dir_setting, cars_setting, imagery_setting, on_unless_off, subprocess_runner, valid_id  # noqa: E402
+from service import BuildError, BuildService, bundles_dir_setting, allowed_imagery_setting, cars_setting, on_unless_off, subprocess_runner, valid_id  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 MAX_BODY = 2048
@@ -63,11 +63,11 @@ def make_handler(service):
                 if not 0 < n <= MAX_BODY:
                     raise ValueError
                 body = json.loads(self.rfile.read(n))
-                bbox = body["bbox"]
+                bbox, imagery = body["bbox"], body["imagery"]       # no default: the caller chooses the photograph or the drawn ground
             except (ValueError, KeyError, TypeError):
-                return self._send(400, {"error": 'send JSON like {"bbox": [minE, minN, maxE, maxN]}'})
+                return self._send(400, {"error": 'send JSON like {"bbox": [minE, minN, maxE, maxN], "imagery": "esri" or "stylised"}'})
             try:
-                job = service.request(bbox, self._client())
+                job = service.request(bbox, self._client(), imagery)
             except BuildError as exc:
                 return self._send(429 if "queue" in str(exc) or "in progress" in str(exc) else 400, {"error": str(exc)})
             self._send(200 if job.status == "ready" else 202, job.public(service.position(job)))
@@ -84,12 +84,12 @@ if __name__ == "__main__":
     from pipeline import PIPELINE_VERSION
     import importlib.util
     remove_cars, cars_note = cars_setting(os.environ.get("REMOVE_CARS"), importlib.util.find_spec("cardet") is not None)
-    imagery = imagery_setting(os.environ.get("IMAGERY"))
+    allowed = allowed_imagery_setting(os.environ.get("IMAGERY"))
     fill, register = on_unless_off(os.environ.get("FILL_FOOTPRINTS")), on_unless_off(os.environ.get("REGISTER_IMAGERY"))
-    svc = BuildService(bundles_dir_setting(os.environ.get("BUNDLES_DIR"), ROOT / "data" / "bundles"), subprocess_runner(ROOT, remove_cars=remove_cars and imagery == "esri", fill_footprints=fill, register=register and imagery == "esri", imagery=imagery), PIPELINE_VERSION, imagery=imagery)
+    svc = BuildService(bundles_dir_setting(os.environ.get("BUNDLES_DIR"), ROOT / "data" / "bundles"), subprocess_runner(ROOT, remove_cars=remove_cars, fill_footprints=fill, register=register), PIPELINE_VERSION, allowed=allowed)
     host, port = os.environ.get("HOST", "127.0.0.1"), int(os.environ.get("PORT", "8788"))
     httpd = make_server(svc, host, port)
-    print(f"build service on http://{host}:{port}  (pipeline version {PIPELINE_VERSION}, bundles in {svc.bundles_dir}, cars {cars_note}, buildings {'OSM plus Open Map Local where OSM has none' if fill else 'OSM only'}, ground {'drawn from open data (stylised, no photograph)' if imagery == 'stylised' else ('photograph, registered to the grid' if register else 'photograph, as fetched')})", flush=True)
+    print(f"build service on http://{host}:{port}  (pipeline version {PIPELINE_VERSION}, bundles in {svc.bundles_dir}, cars {cars_note}, buildings {'OSM plus Open Map Local where OSM has none' if fill else 'OSM only'}, ground: {' or '.join(allowed)}, chosen per build; photographs {'registered to the grid' if register else 'as fetched'})", flush=True)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
