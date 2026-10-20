@@ -16,6 +16,7 @@ import numpy as np
 import rasterio
 from pyproj import Transformer
 from rasterio.features import rasterize, sieve
+from scipy import ndimage as ndi
 from rasterio.transform import from_bounds
 from rasterio.warp import Resampling, reproject
 from shapely.geometry import LineString, box
@@ -29,6 +30,9 @@ CLASSES = {UNKNOWN: "unknown", ROAD: "road", PAVED: "paved", GRASS: "grass", BAR
 RES_M = 0.5
 CANOPY_MIN_M = 2.5          # surface this far above the terrain, outside buildings, is a tree
 MIN_BLOB_CELLS = 12         # 3 m2: smaller islands of a guessed class are noise
+SEA_MAX_M = 1.0             # the sea is held at one constant height at or below this (Welsh LiDAR: -2.3 m; elsewhere 0 m from Terrain 50), flat to the centimetre
+SEA_CLOSE_CELLS = 8         # the closing above works on 8 x 8 blocks of cells (4 m)
+SEA_MIN_CELLS = 8000        # 2000 m2 of one such height: real ground is never that flat, and OpenStreetMap has no sea polygon, only a coastline
 ATTRIBUTION = osm.ATTRIBUTION
 
 ROAD_WIDTH = {"motorway": 14, "trunk": 12, "primary": 10, "secondary": 9, "tertiary": 8, "unclassified": 6, "residential": 6,
@@ -176,6 +180,33 @@ def _grid(path, transform_, shape, resampling=Resampling.bilinear):
     return out
 
 
+def sea_mask(dtm):
+    """1 where the terrain is the sea: a plateau of one exact height at or below SEA_MAX_M that covers at least SEA_MIN_CELLS cells
+    (the LiDAR stops at the coast and the gap is held at a constant). A raster of heights, nan for nodata."""
+    low = np.round(np.nan_to_num(dtm, nan=1e6), 2)
+    low[low > SEA_MAX_M] = np.nan
+    values, counts = np.unique(low[~np.isnan(low)], return_counts=True)
+    flat = values[counts >= SEA_MIN_CELLS]
+    sea = sieve(np.isin(low, flat).astype("uint8"), SEA_MIN_CELLS, connectivity=4)
+    if sea.any():                      # the sea round a pier or a jetty is not land: close gaps narrower than ~30 m (on a coarse copy: this is only a shape)
+        k = SEA_CLOSE_CELLS
+        h, w = (sea.shape[0] // k) * k, (sea.shape[1] // k) * k
+        coarse = sea[:h, :w].reshape(h // k, k, w // k, k).max(axis=(1, 3)).astype(bool)
+        closed = ndi.binary_closing(np.pad(coarse, 8), iterations=4)[8:-8, 8:-8]
+        grown = np.kron(closed, np.ones((k, k), dtype="uint8"))
+        sea[:h, :w] |= grown
+    return sea
+
+
+def intertidal_mask(dtm, sea):
+    """1 on low ground (at or below SEA_MAX_M) that runs into the sea: the beach between the tide marks, which the LiDAR measures but
+    OpenStreetMap does not map. Whatever is mapped there is painted over it afterwards."""
+    low = np.nan_to_num(dtm, nan=1e6) <= SEA_MAX_M
+    labels, _ = ndi.label(low | (sea == 1))
+    touching = np.unique(labels[sea == 1])
+    return (np.isin(labels, touching[touching > 0]) & ~(sea == 1)).astype("uint8")
+
+
 def build_landcover(dtm_path, imagery_path, buildings, dsm_path=None, elements=None, bbox=None):
     """(uint8 raster, info). The grid is the DTM's extent at RES_M, rows north to south. `buildings` is a GeoDataFrame in
     EPSG:27700 (may be empty). `elements` are Overpass elements (fetched for `bbox`, default the DTM's, when not given).
@@ -197,6 +228,11 @@ def build_landcover(dtm_path, imagery_path, buildings, dsm_path=None, elements=N
 
     def of(items, cls, bridge=None):
         return [g for c, g, b in items if c == cls and (bridge is None or b == bridge)]
+
+    ground = _grid(dtm_path, tf, arr.shape)
+    sea = sea_mask(ground)
+    arr[intertidal_mask(ground, sea) == 1] = BARE                  # the bases the rest is painted over, so piers, roads and buildings still show
+    arr[sea == 1] = WATER
 
     _paint(arr, of(areas, GRASS), GRASS, tf)
     _paint(arr, of(areas, BARE), BARE, tf)

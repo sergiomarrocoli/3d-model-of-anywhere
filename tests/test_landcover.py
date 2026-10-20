@@ -129,3 +129,27 @@ def test_with_no_photo_there_is_no_colour_guess_and_what_the_map_does_not_cover_
     arr, info = lc.build_landcover(dtm, None, gpd.GeoDataFrame({"building": []}, geometry=[], crs="EPSG:27700"), None, elements=elements)
     assert cell(arr, 20, 20) == lc.GRASS and cell(arr, 20, 80) == lc.ROAD and cell(arr, 75, 15) == lc.WATER
     assert not (arr == lc.UNKNOWN).any() and info["share"]["grass"] > 0.7
+
+
+@pytest.mark.parametrize("sea_height", [0.0, -2.3])         # Terrain 50 fills the gap with 0 m, the Welsh LiDAR holds the sea at -2.3 m
+def test_a_large_flat_area_at_sea_level_is_the_sea_but_a_small_one_and_the_land_are_not(tmp_path, sea_height):
+    height = np.full((200, 200), 12.0, "float32")
+    height[:, 100:] = sea_height           # the east half is the sea
+    height[10:20, 10:20] = sea_height      # a 5 m puddle of the same height on the land is nothing
+    height[100:200, 20:60] += np.random.default_rng(1).normal(0, 0.3, (100, 40)).astype("float32") - 11.5      # low, noisy ground (a fen) is not flat enough to be the sea
+    dtm = tif(tmp_path / "dtm.tif", height)
+    elements = [way([(0, 80), (100, 80)], highway="pier")]
+    arr, info = lc.build_landcover(dtm, None, gpd.GeoDataFrame({"building": []}, geometry=[], crs="EPSG:27700"), None, elements=elements)
+    assert cell(arr, 75, 50) == lc.WATER and cell(arr, 25, 50) == lc.GRASS and cell(arr, 7, 7) == lc.GRASS
+    assert info["share"]["water"] > 0.45
+
+
+def test_the_beach_between_the_tides_is_sand_and_a_pier_does_not_leave_grass_in_the_sea(tmp_path):
+    height = np.full((200, 200), 12.0, "float32")
+    height[:, 120:] = -2.3                           # the sea
+    height[:, 100:120] = np.linspace(0.8, -2.0, 20)  # the foreshore: low, sloping, not flat
+    height[95:105, 160:170] = 8.0                    # a pier head standing in the sea (LiDAR measures the deck)
+    dtm = tif(tmp_path / "dtm.tif", height)
+    arr, _ = lc.build_landcover(dtm, None, gpd.GeoDataFrame({"building": []}, geometry=[], crs="EPSG:27700"), None, elements=[])
+    assert cell(arr, 55, 50) == lc.BARE and cell(arr, 80, 50) == lc.WATER and cell(arr, 20, 50) == lc.GRASS
+    assert cell(arr, 82, 50) == lc.WATER               # the pier head's block of 8 m ground is closed over
