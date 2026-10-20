@@ -12,6 +12,8 @@ import { createFlyCamera, debugMain, listMaps, loadMap } from '@map';
 
 const $ = (id) => document.getElementById(id);
 const DEFAULT_AREA = 'newtown';
+const BUNDLES = `${import.meta.env.BASE_URL}bundles`;      // where the areas are served from (a built copy may live under a sub-path)
+const DEMO = Boolean(import.meta.env.VITE_DEMO);           // the hosted demo has no build service: no picking, no debug page
 
 async function viewArea(area) {
   const canvas = $('scene');
@@ -20,7 +22,7 @@ async function viewArea(area) {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x14161a);
 
-  const map = await loadMap(`/bundles/area_${area}`, { renderer });
+  const map = await loadMap(`${BUNDLES}/area_${area}`, { renderer });
   scene.add(map.object);
   mountCredits($('credits'), map.attribution);
   if (new URLSearchParams(location.search).has('landcover')) map.showLandcover(true);
@@ -39,10 +41,12 @@ async function viewArea(area) {
 
 async function main() {
   const params = new URLSearchParams(location.search);
-  const areas = await listMaps();
+  const areas = await listMaps(BUNDLES);
   const area = params.get('area') ?? (areas.includes(DEFAULT_AREA) ? DEFAULT_AREA : areas[0]);
-  $('areas').innerHTML = areas.map((a) => `<a href="?area=${a}"${a === area ? ' class="on"' : ''}>${a}</a>`).join(' ') + ' <a href="?pick">pick area</a> <a href="?debug&area=' + area + '">debug</a>';
-  if (params.has('debug')) { document.body.classList.add('debug'); return debugMain(); }
+  const links = areas.map((a) => `<a href="?area=${a}"${a === area ? ' class="on"' : ''}>${a}</a>`).join(' ');
+  $('areas').innerHTML = DEMO ? `${links} <span class="hint">WASD to move, Q/E down/up, Shift to speed up, drag to look, wheel for speed</span>`
+    : links + ' <a href="?pick">pick area</a> <a href="?debug&area=' + area + '">debug</a>';
+  if (!DEMO && params.has('debug')) { document.body.classList.add('debug'); return debugMain(); }
   if (!areas.length && !params.has('pick') && !params.has('flow')) throw new Error('no areas built yet: open ?pick to choose one, or run build_area.py');
 
   const registry = {

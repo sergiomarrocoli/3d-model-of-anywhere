@@ -74,13 +74,18 @@ def normalise_box(bbox):
     return box
 
 
-def area_id(box):
-    """e.g. (310450, 290880, 311450, 291880) -> 'e310450n290880w1000h1000'."""
-    return f"e{box[0]}n{box[1]}w{box[2] - box[0]}h{box[3] - box[1]}"
+IMAGERIES = ("esri", "stylised")        # the ground texture a build can use: Esri's photograph (development use only), or one drawn from open data (can be published)
+STYLISED_SUFFIX = "-stylised"
 
 
-_ID_RE = re.compile(r"^e\d+n\d+w\d+h\d+$")
+def area_id(box, imagery="esri"):
+    """e.g. (310450, 290880, 311450, 291880) -> 'e310450n290880w1000h1000', or '...-stylised' for the drawn ground (a different bundle of the same area)."""
+    return f"e{box[0]}n{box[1]}w{box[2] - box[0]}h{box[3] - box[1]}" + (STYLISED_SUFFIX if imagery == "stylised" else "")
+
+
+_ID_RE = re.compile(r"^e\d+n\d+w\d+h\d+(-stylised)?$")
 valid_id = lambda s: bool(_ID_RE.match(str(s)))
+imagery_of = lambda id: "stylised" if str(id).endswith(STYLISED_SUFFIX) else "esri"
 
 
 class Job:
@@ -94,7 +99,7 @@ class Job:
 
     def public(self, queue_position=None):
         d = {"id": self.id, "status": self.status, "bbox": list(self.box), "percent": self.percent, "stage": self.stage,
-             "error": self.error, "log": self.log[-8:], "bundle": f"/bundles/area_{self.id}/" if self.status == "ready" else None}
+             "imagery": imagery_of(self.id), "error": self.error, "log": self.log[-8:], "bundle": f"/bundles/area_{self.id}/" if self.status == "ready" else None}
         if self.started_at is not None:       # how long the build has been running (or took), so a screen that joined late shows the real time
             d["elapsed_s"] = round((self.finished_at or self.clock()) - self.started_at, 1)
         if queue_position is not None:
@@ -102,9 +107,15 @@ class Job:
         return d
 
 
-def imagery_setting(env_value):
-    """'stylised' when IMAGERY asks for the drawn ground texture (no photograph, can be published), else 'esri' (the photograph)."""
-    return "stylised" if (env_value or "").strip().lower() in ("stylised", "stylized", "drawn") else "esri"
+def allowed_imagery_setting(env_value):
+    """Which ground textures this service will build: both unless IMAGERY narrows it ('stylised' for a service that must not touch the
+    Esri photograph, say a public one). Whoever asks for a build still has to choose one of them."""
+    wanted = {"stylized": "stylised", "drawn": "stylised", "photo": "esri"}
+    names = [wanted.get(w.strip().lower(), w.strip().lower()) for w in (env_value or "").split(",") if w.strip()]
+    bad = [n for n in names if n not in IMAGERIES]
+    if bad:
+        raise RuntimeError(f"IMAGERY must be {' and/or '.join(IMAGERIES)}, not {bad[0]!r}")
+    return tuple(n for n in IMAGERIES if n in names) or IMAGERIES
 
 
 def on_unless_off(env_value):
@@ -125,17 +136,17 @@ def cars_setting(env_value, detector_installed):
     return False, "kept (detector not installed: pip install -r pipeline/requirements-cars.txt)"
 
 
-def subprocess_runner(root, python=sys.executable, timeout=BUILD_TIMEOUT_S, remove_cars=False, fill_footprints=False, register=False, imagery="esri"):
-    """Run the real pipeline. `on_line` gets each log line as it appears; raises if the build fails or times out."""
+def subprocess_runner(root, python=sys.executable, timeout=BUILD_TIMEOUT_S, remove_cars=False, fill_footprints=False, register=False):
+    """Run the real pipeline. `on_line` gets each log line as it appears; raises if the build fails or times out.
+    The ground texture is the one the build id names (see area_id); the photo steps (cars, registration) apply only to a photograph."""
     def run(box, id, out_dir, on_line):
-        cmd = [python, "-m", "pipeline.build_area", "--bbox", *[str(v) for v in box], "--id", id, "--out", str(out_dir)]
-        if remove_cars:
+        imagery = imagery_of(id)
+        cmd = [python, "-m", "pipeline.build_area", "--bbox", *[str(v) for v in box], "--id", id, "--out", str(out_dir), "--imagery", imagery]
+        if remove_cars and imagery == "esri":
             cmd.append("--remove-cars")
         if fill_footprints:      # Open Map Local buildings where OSM has none (kept only where the LiDAR sees them)
             cmd.append("--fill-footprints")
-        if imagery == "stylised":     # the ground drawn from open data instead of a photograph
-            cmd += ["--imagery", "stylised"]
-        if register:             # the photo fitted to the grid and the LiDAR (needs a LiDAR surface; it says so and does nothing without)
+        if register and imagery == "esri":     # the photo fitted to the grid and the LiDAR (needs a LiDAR surface; it says so and does nothing without)
             cmd.append("--register")
         proc = subprocess.Popen(cmd, cwd=str(root), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
         timer = threading.Timer(timeout, proc.kill)
@@ -155,8 +166,8 @@ def subprocess_runner(root, python=sys.executable, timeout=BUILD_TIMEOUT_S, remo
 
 
 class BuildService:
-    def __init__(self, bundles_dir, runner, pipeline_version, clock=time.time, imagery="esri"):
-        self.bundles_dir, self.runner, self.version, self.clock, self.imagery = Path(bundles_dir), runner, pipeline_version, clock, imagery
+    def __init__(self, bundles_dir, runner, pipeline_version, clock=time.time, allowed=IMAGERIES):
+        self.bundles_dir, self.runner, self.version, self.clock, self.allowed = Path(bundles_dir), runner, pipeline_version, clock, tuple(allowed)
         self.jobs, self.lock, self.q = {}, threading.RLock(), queue.Queue()
         self.thread = None
 
@@ -165,15 +176,20 @@ class BuildService:
         meta = self.bundles_dir / f"area_{id}" / "meta.json"
         try:
             built = json.loads(meta.read_text())
-            return built.get("pipeline_version") == self.version and built.get("imagery_source", "esri") == self.imagery      # a photo build and a drawn one of the same area are different bundles
+            return built.get("pipeline_version") == self.version and built.get("imagery_source", "esri") == imagery_of(id)      # a photo build and a drawn one of the same area are different bundles (the id says which)
         except (OSError, ValueError):
             return False
 
     # -- requests ----------------------------------------------------------
-    def request(self, bbox, client="anon"):
-        """Ask for a build. Returns the job (already 'ready' if cached). Raises BuildError if the request is refused."""
+    def request(self, bbox, client="anon", imagery="esri"):
+        """Ask for a build with the ground texture `imagery` ('esri' or 'stylised'; the HTTP face makes the caller choose). Returns the job
+        (already 'ready' if cached). Raises BuildError if the request is refused."""
+        if imagery not in IMAGERIES:
+            raise BuildError(f"imagery must be one of: {', '.join(IMAGERIES)}")
+        if imagery not in self.allowed:
+            raise BuildError(f"this service does not build with {imagery} imagery")
         box = normalise_box(bbox)
-        id = area_id(box)
+        id = area_id(box, imagery)
         with self.lock:
             job = self.jobs.get(id)
             if self.cached(id):

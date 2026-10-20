@@ -174,7 +174,7 @@ def main(argv=None):
     ap.add_argument("--remove-cars", action="store_true", help="paint parked cars out of the imagery (needs pipeline/requirements-cars.txt)")
     ap.add_argument("--fill-footprints", action="store_true", help="add OS Open Map Local buildings where OSM has none (kept only where the LiDAR sees something tall)")
     ap.add_argument("--register", action="store_true", dest="register_imagery", help="fit the photo's offset and lean from roads and footprints, and warp it onto the OS grid (needs a LiDAR surface)")
-    ap.add_argument("--imagery", choices=["esri", "stylised"], default="esri", dest="imagery_source", help="the ground texture: Esri World Imagery (a photograph, development use only), or a stylised one drawn from open data (land cover and LiDAR) that can be published")
+    ap.add_argument("--imagery", choices=["esri", "stylised"], required=True, dest="imagery_source", help="the ground texture, which you must choose: esri is Esri World Imagery (a photograph, for development use only, not to be published), stylised is drawn from open data (land cover and LiDAR) and can be published")
     a = ap.parse_args(argv)
     if a.centre:
         e, n = a.centre

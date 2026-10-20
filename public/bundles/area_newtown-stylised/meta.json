@@ -1,0 +1,92 @@
+{
+  "version": 1,
+  "pipeline_version": 7,
+  "id": "newtown-stylised",
+  "created": "2026-10-19T19:56:49+00:00",
+  "crs": "EPSG:27700",
+  "bbox": [
+    310450.0,
+    290880.0,
+    311450.0,
+    291880.0
+  ],
+  "origin": [
+    310450.0,
+    290880.0
+  ],
+  "size_m": [
+    1000.0,
+    1000.0
+  ],
+  "heightmap": {
+    "file": "heightmap.png",
+    "width": 1000,
+    "height": 1000,
+    "resolution_m": 1.0,
+    "bits": 16,
+    "min": 99.80999755859375,
+    "max": 159.52999877929688
+  },
+  "surfacemap": {
+    "file": "surfacemap.png",
+    "width": 1000,
+    "height": 1000,
+    "resolution_m": 1.0,
+    "bits": 16,
+    "min": 99.83000183105469,
+    "max": 165.83999633789062
+  },
+  "landcover": {
+    "file": "landcover.png",
+    "width": 2000,
+    "height": 2000,
+    "resolution_m": 0.5,
+    "classes": {
+      "0": "unknown",
+      "1": "road",
+      "2": "paved",
+      "3": "grass",
+      "4": "bare",
+      "5": "tree",
+      "6": "water",
+      "7": "building"
+    },
+    "share": {
+      "road": 0.0995,
+      "paved": 0.0558,
+      "grass": 0.4888,
+      "bare": 0.0072,
+      "tree": 0.175,
+      "water": 0.0392,
+      "building": 0.1346
+    },
+    "canopy_from_lidar": true
+  },
+  "imagery": {
+    "file": "imagery.jpg",
+    "width": 3968,
+    "height": 3968
+  },
+  "buildings": {
+    "file": "buildings.geojson",
+    "count": 720,
+    "coords": "local metres from the south-west corner"
+  },
+  "attribution": [
+    "Contains Welsh Government LiDAR data \u00a9 Welsh Government / Llywodraeth Cymru (OGL v3)",
+    "\u00a9 OpenStreetMap contributors (ODbL)",
+    "Contains OS data \u00a9 Crown copyright and database right (OGL v3)",
+    "Ground texture drawn from OpenStreetMap, OS Open Map Local and LiDAR data (no aerial photography)"
+  ],
+  "imagery_source": "stylised",
+  "imagery_lean": {
+    "ground": [
+      0,
+      0
+    ],
+    "perMetre": [
+      0,
+      0
+    ]
+  }
+}
