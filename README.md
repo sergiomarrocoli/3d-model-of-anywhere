@@ -9,7 +9,7 @@ outlines and heights, and a ground texture) into a small tile bundle, and a thre
 
 *One bundle, in layers (Llandudno, Conwy: the Great Orme, the town, the pier and the bay; the ground is drawn from open data): what the build step makes and the 3D map reads.*
 
-[![A fly-through of the finished 3D map of Llandudno: the Great Orme's slopes, the town, the beach and pier, and the sea](docs/llandudno.gif)](https://sergiomarrocoli.github.io/3d-model-of-anywhere/)
+[![The finished 3D map of Llandudno, seen from above the promenade: buildings with walls and roofs, the beach and bay, and the Great Orme rising behind](docs/llandudno.jpg)](https://sergiomarrocoli.github.io/3d-model-of-anywhere/)
 
 *The 3D map built from that bundle. [Click to fly around it live](https://sergiomarrocoli.github.io/3d-model-of-anywhere/) (GitHub cannot embed it here). Ground texture drawn from OpenStreetMap, OS Open Map Local and Welsh Government LiDAR; credits below.*
 
