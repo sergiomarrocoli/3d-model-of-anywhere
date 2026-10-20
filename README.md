@@ -1,11 +1,13 @@
 # uk-map-3d
 
-> **Keep this repository private.** Do not make it public until the imagery rights issue has been settled: the pipeline
-> currently draws on Esri World Imagery, which is for development use only, and screenshots, GIFs, a live demo or
-> committed imagery built on it may not be allowed. See "Before going public" below.
-
 Pick a box anywhere in the UK and walk around it in 3D. A Python pipeline turns open map data (terrain heights, building
-outlines and heights, aerial imagery) into a small tile bundle, and a three.js client builds the scene from it.
+outlines and heights, and a ground texture) into a small tile bundle, and a three.js client builds the scene from it.
+
+**[Live demo: fly around Newtown, Powys in 3D](https://sergiomarrocoli.github.io/uk-map-3d/)** (the ground is drawn from open data; picking your own area needs the build service, see "Run it")
+
+![A 1 km square of Newtown, Powys, pulled apart into its four layers: the drawn ground, land cover, building heights from LiDAR, and terrain](docs/layers.jpg)
+
+*One bundle, in layers (the ground here is the stylised one, drawn from open data): what the build step makes and the 3D map reads.*
 
 ```mermaid
 flowchart TD
@@ -39,6 +41,7 @@ python3 -m venv .venv && .venv/bin/pip install -r pipeline/requirements.txt
 python3 build_area.py --help            # build an area into data/bundles/
 npm run dev                             # http://localhost:5173/?area=<id>; ?pick chooses and builds one
 python3 modules/builder/server/serve.py # the build service the picker uses
+npm run build:demo                      # a static copy of the viewer with the Newtown bundle in public/bundles (what the Pages workflow publishes)
 npm test && python3 -m pytest           # JavaScript and Python tests
 ```
 
@@ -95,16 +98,19 @@ offset of (-0.4 m east, +1.5 m north), a lean of (0.35, -0.15) m per metre of he
 warm cache the build took 31 s against 14 s without the flags. The lean is fitted per area and assumes one photo capture;
 a roof beyond its footprint (or a building in neither data set) is not corrected.
 
-## Stylised ground (images you can publish)
+## Choosing the ground: a photograph or drawn from open data
 
-The photograph that drapes the terrain (Esri World Imagery) is for development use only, so screenshots and video made with it cannot go in the repo, and no open source has crisp aerial photos of Great Britain (the 12.5 and 25 cm national set is for public bodies; Sentinel-2 is open but 10 m per pixel). So the ground can be drawn instead:
+Every build has to say which ground texture it wants (`--imagery` on the command line; a choice on the build screen; `"imagery"` in the build service's request). There is no default.
+
+- **`esri`**: a photograph, Esri World Imagery. It is for development use only, so screenshots and video made with it must not be published, and no open source has crisp aerial photos of Great Britain (the 12.5 and 25 cm national set is for public bodies; Sentinel-2 is open but 10 m per pixel). The photo steps (`--register`, `--remove-cars`) apply only to this one.
+- **`stylised`**: the ground drawn from open data, so what you build can be published. Everything in this repository (the README image, the demo) uses it.
 
 ```
 .venv/bin/python -m pipeline.build_area --bbox 310450 290880 311450 291880 --id newtown-stylised --fill-footprints --imagery stylised
-IMAGERY=stylised bin/cars        # in civil-war: the build service does the same for any area you pick
+IMAGERY=stylised bin/cars        # in civil-war: a build service that only offers the drawn ground (leave IMAGERY out to offer both and let the picker choose)
 ```
 
-`pipeline/stylised.py` paints the land cover raster (road, paved, grass, bare, trees, water, buildings) in flat colours, gives every building a roof colour of its own, lights it from the north west with the LiDAR surface (pitched roofs, tree canopies and slopes shade, buildings and trees cast shadows), and adds a grain per surface and a darker line where roads, water and roofs meet the ground. It is crisp at any zoom, matches the footprints exactly (so there is no lean to fix and no cars to remove, and the bundle's `imagery_lean` is zero), takes about 15 s for a 1 km box, and uses only open data (OpenStreetMap, OS Open Map Local, Welsh and English LiDAR) with their attributions. `meta.json` says `imagery_source: "stylised"`; the build service keeps a drawn and a photographic build of one area apart.
+`pipeline/stylised.py` paints the land cover raster (road, paved, grass, bare, trees, water, buildings) in flat colours, gives every building a roof colour of its own, lights it from the north west with the LiDAR surface (pitched roofs, tree canopies and slopes shade, buildings and trees cast shadows), and adds a grain per surface and a darker line where roads, water and roofs meet the ground. It is crisp at any zoom, matches the footprints exactly (so there is no lean to fix and no cars to remove, and the bundle's `imagery_lean` is zero), takes about 15 s for a 1 km box, and uses only open data (OpenStreetMap, OS Open Map Local, Welsh and English LiDAR) with their attributions. `meta.json` says `imagery_source: "stylised"`; the build service keeps a drawn and a photographic build of one area apart (the drawn one's id ends `-stylised`).
 
 Design notes and data sources are in [PLAN.md](PLAN.md).
 
@@ -113,10 +119,13 @@ Design notes and data sources are in [PLAN.md](PLAN.md).
 `npm install git+https://github.com/sergiomarrocoli/uk-map-3d.git#v0.1.0`, then import `uk-map-3d/map`, `uk-map-3d/flow` and
 the other modules listed in `package.json`.
 
-## Before going public
+## Data sources and credits
 
-1. Settle the imagery licensing: read Esri's current terms (goto.arcgis.com/termsofuse), ask Esri, or switch the showcase
-   to openly licensed aerial imagery.
-2. No Esri imagery, and nothing built from it (screenshots, GIFs, demo bundles), in the repository or the README until then.
-   The images in `docs/` were made from it and must be replaced or removed first.
-3. Candidate demo places: Newtown (the area we know best), Silverstone (a real circuit, good for racing), Stonehenge.
+The default, publishable build uses only open data, and a bundle records the credit lines in its `meta.json` and `ATTRIBUTION.txt` (the viewer shows them, `modules/credits`):
+
+- **Terrain and building heights**: LiDAR from the [Environment Agency](https://environment.data.gov.uk/survey) (England) and the [Welsh Government](https://datamap.gov.wales/) (Wales), under the Open Government Licence v3.0. Contains Environment Agency information © Environment Agency and/or database right; Contains Welsh Government LiDAR data © Welsh Government / Llywodraeth Cymru.
+- **Buildings, roads, water, land use**: © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors, under the Open Database Licence (ODbL).
+- **Extra buildings, road centrelines, terrain fallback**: Contains OS data © Crown copyright and database right, from [OS Open Map Local and OS Terrain 50](https://www.ordnancesurvey.co.uk/products/os-open-data), under the Open Government Licence v3.0.
+- **Geocoding in the picker**: OpenStreetMap's Nominatim, with its basemap tiles.
+
+The photographic option fetches [Esri World Imagery](https://www.arcgis.com/home/item.html?id=10df2279f9684e4a9f6a7f08febac2a9) (Esri, Maxar, Earthstar Geographics) at build time, under Esri's terms of use. Nothing from it is stored in this repository: pick it only for your own development use.

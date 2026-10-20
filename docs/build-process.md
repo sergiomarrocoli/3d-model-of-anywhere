@@ -68,10 +68,10 @@ flowchart TD
         basez["base height = lowest DTM<br/>under the footprint"]
     end
 
-    basez --> g{"--imagery ?"}
+    basez --> g{"--imagery (required:<br/>the user chooses)"}
 
     subgraph G["3 Ground texture"]
-        g -- "esri (default)" --> tiles["Esri World Imagery tiles<br/>0.25 m per pixel<br/>(development use only)"]
+        g -- "esri" --> tiles["Esri World Imagery tiles<br/>0.25 m per pixel<br/>(development use only)"]
         tiles --> reg
         reg{"--register?"}
         reg -. "yes" .-> fit["fit the photo: ground offset from<br/>OS road centrelines, lean from<br/>building outlines on photo edges<br/>then move each roof back"]
