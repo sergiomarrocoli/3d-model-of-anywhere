@@ -13,17 +13,7 @@ outlines and heights, and a ground texture) into a small tile bundle, and a thre
 
 *The 3D map built from that bundle. [Click to fly around it live](https://sergiomarrocoli.github.io/3d-model-of-anywhere/) (GitHub cannot embed it here). Ground texture drawn from OpenStreetMap, OS Open Map Local and Welsh Government LiDAR; credits below.*
 
-```mermaid
-flowchart TD
-    pick["<b>1 Pick</b><br/>drag a box on a map: up to 4 km², any shape"]
-    build["<b>2 Build</b> (about a minute for 1 km²)<br/>terrain: LiDAR heights, 1 m<br/>buildings: OpenStreetMap and OS Open Map Local, heights from LiDAR<br/>ground: you choose an aerial photo (development only) or one drawn from open data (publishable)<br/>land cover: road, grass, trees, water"]
-    bundle[("<b>3 Bundle</b><br/>a small folder of PNGs and GeoJSON")]
-    map["<b>4 3D map</b><br/>terrain, buildings, roofs, what is under a wheel"]
-    play(["<b>5 Play</b><br/>racer, walker, multiplayer"])
-    pick --> build --> bundle --> map --> play
-```
-
-Each step in detail, with the choices and fallbacks: [docs/build-process.md](docs/build-process.md).
+How an area gets built, step by step, with the choices and fallbacks: [docs/build-process.md](docs/build-process.md).
 
 This repository is only about selecting an area and building a map. The games that use it (a Micro Machines style racer,
 a Cannon Fodder style walker, multiplayer) live in `civil-war`, which installs this as a package.
