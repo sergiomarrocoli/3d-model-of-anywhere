@@ -6,8 +6,7 @@ const OGL = { licence: 'Open Government Licence v3.0', licenceUrl: 'https://www.
 
 export const SOURCES = [
   { match: /Environment Agency/i, role: 'Terrain', name: 'Environment Agency LiDAR (England)', url: 'https://environment.data.gov.uk/survey', ...OGL },
-  { match: /Welsh Government/i, role: 'Terrain', name: 'Welsh Government LiDAR (Wales)', url: 'https://datamap.gov.wales/', ...OGL,
-    note: 'Licence wording to be confirmed with Welsh Government before any release.' },
+  { match: /Welsh Government/i, role: 'Terrain', name: 'Welsh Government LiDAR (Wales)', url: 'https://datamap.gov.wales/maps/6969', ...OGL },   // the record for the LiDAR data states the Open Government Licence
   { match: /Natural Resources Wales/i, role: 'Terrain', name: 'Natural Resources Wales LiDAR', url: 'https://naturalresources.wales/', ...OGL },
   { match: /Contains OS data/i, role: 'Terrain and buildings', name: 'Ordnance Survey (OS Terrain 50, OS Open Map Local)', url: 'https://www.ordnancesurvey.co.uk/products/os-open-data', ...OGL },
   { match: /OpenStreetMap/i, role: 'Buildings', name: 'OpenStreetMap', url: 'https://www.openstreetmap.org/copyright', licence: 'Open Database Licence (ODbL)', licenceUrl: 'https://opendatacommons.org/licenses/odbl/' },

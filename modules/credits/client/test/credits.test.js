@@ -16,9 +16,9 @@ describe('describeCredits', () => {
     expect(got[OS].name).toMatch(/Ordnance Survey/); expect(got[OSM].licence).toMatch(/ODbL/); expect(got[ESRI].name).toBe('Esri World Imagery'); expect(got[S2].name).toMatch(/Sentinel/);
     for (const e of Object.values(got)) { expect(e.role).not.toBe('Other'); expect(e.url).toMatch(/^https:/); expect(e.licenceUrl).toMatch(/^https:/); }
   });
-  it('says honestly when imagery is development only and the Welsh licence is unconfirmed', () => {
+  it('says honestly when imagery is development only, and has no note for the Welsh LiDAR (it is under the OGL)', () => {
     const [esri] = describeCredits([ESRI]), [welsh] = describeCredits([WELSH]);
-    expect(esri.note).toMatch(/development/i); expect(welsh.note).toMatch(/confirm/i);
+    expect(esri.note).toMatch(/development/i); expect(welsh.note).toBeNull(); expect(welsh.licence).toMatch(/Open Government Licence/);
   });
   it('keeps unknown lines word for word under Other, and does not drop or invent anything', () => {
     const [e] = describeCredits(['Tiles by Somebody New']);

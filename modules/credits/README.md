@@ -2,8 +2,7 @@
 
 The credit line along the bottom of the game, plus a **Credits** button that opens an overlay listing every source the
 area used: what it is for (terrain, buildings, imagery), its name and link, its licence and link, the exact credit text,
-and a note where there is something to be careful about (the Esri imagery is development use only; the Welsh Government
-LiDAR wording is still to be confirmed).
+and a note where there is something to be careful about (the Esri imagery is development use only).
 
 ```js
 import { mountCredits } from '@credits';
