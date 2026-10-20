@@ -9,6 +9,10 @@ outlines and heights, and a ground texture) into a small tile bundle, and a thre
 
 *One bundle, in layers (the ground here is the stylised one, drawn from open data): what the build step makes and the 3D map reads.*
 
+[![The finished 3D map of Newtown, Powys, seen from above the river: terrain, buildings with roofs, trees and roads](docs/demo.jpg)](https://sergiomarrocoli.github.io/3d-model-of-anywhere/)
+
+*The 3D map built from that bundle. [Click to fly around it live](https://sergiomarrocoli.github.io/3d-model-of-anywhere/) (GitHub cannot embed it here).*
+
 ```mermaid
 flowchart TD
     pick["<b>1 Pick</b><br/>drag a box on a map: up to 4 km², any shape"]
