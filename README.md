@@ -129,3 +129,9 @@ The default, publishable build uses only open data, and a bundle records the cre
 - **Geocoding in the picker**: OpenStreetMap's Nominatim, with its basemap tiles.
 
 The photographic option fetches [Esri World Imagery](https://www.arcgis.com/home/item.html?id=10df2279f9684e4a9f6a7f08febac2a9) (Esri, Maxar, Earthstar Geographics) at build time, under Esri's terms of use. Nothing from it is stored in this repository: pick it only for your own development use.
+
+## Licence
+
+The code is under the [MIT licence](LICENSE). The map data is not covered by it: the Newtown bundle in `public/bundles/` (and the images
+made from it, such as `docs/layers.jpg`) is derived from the sources above, so it keeps their terms: OpenStreetMap's Open Database
+Licence (attribution and share-alike) and the Open Government Licence v3.0, with the credit lines in its `ATTRIBUTION.txt`.
