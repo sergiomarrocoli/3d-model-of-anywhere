@@ -1,9 +1,9 @@
-# uk-map-3d
+# 3d-model-of-anywhere
 
 Pick a box anywhere in the UK and walk around it in 3D. A Python pipeline turns open map data (terrain heights, building
 outlines and heights, and a ground texture) into a small tile bundle, and a three.js client builds the scene from it.
 
-**[Live demo: fly around Newtown, Powys in 3D](https://sergiomarrocoli.github.io/uk-map-3d/)** (the ground is drawn from open data; picking your own area needs the build service, see "Run it")
+**[Live demo: fly around Newtown, Powys in 3D](https://sergiomarrocoli.github.io/3d-model-of-anywhere/)** (the ground is drawn from open data; picking your own area needs the build service, see "Run it")
 
 ![A 1 km square of Newtown, Powys, pulled apart into its four layers: the drawn ground, land cover, building heights from LiDAR, and terrain](docs/layers.jpg)
 
@@ -116,7 +116,7 @@ Design notes and data sources are in [PLAN.md](PLAN.md).
 
 ## Use it from another project
 
-`npm install git+https://github.com/sergiomarrocoli/uk-map-3d.git#v0.1.0`, then import `uk-map-3d/map`, `uk-map-3d/flow` and
+`npm install git+https://github.com/sergiomarrocoli/3d-model-of-anywhere.git#v0.1.0` (the package is still named `uk-map-3d`), then import `uk-map-3d/map`, `uk-map-3d/flow` and
 the other modules listed in `package.json`.
 
 ## Data sources and credits
