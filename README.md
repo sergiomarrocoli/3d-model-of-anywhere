@@ -16,7 +16,7 @@ outlines and heights, and a ground texture) into a small tile bundle, and a thre
 ```mermaid
 flowchart TD
     pick["<b>1 Pick</b><br/>drag a box on a map: up to 4 km², any shape"]
-    build["<b>2 Build</b> (about a minute for 1 km²)<br/>terrain: LiDAR heights, 1 m<br/>buildings: OpenStreetMap and OS Open Map Local, heights from LiDAR<br/>ground: an aerial photo, or drawn from open data (publishable)<br/>land cover: road, grass, trees, water"]
+    build["<b>2 Build</b> (about a minute for 1 km²)<br/>terrain: LiDAR heights, 1 m<br/>buildings: OpenStreetMap and OS Open Map Local, heights from LiDAR<br/>ground: you choose an aerial photo (development only) or one drawn from open data (publishable)<br/>land cover: road, grass, trees, water"]
     bundle[("<b>3 Bundle</b><br/>a small folder of PNGs and GeoJSON")]
     map["<b>4 3D map</b><br/>terrain, buildings, roofs, what is under a wheel"]
     play(["<b>5 Play</b><br/>racer, walker, multiplayer"])
