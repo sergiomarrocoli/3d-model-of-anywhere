@@ -1,0 +1,4 @@
+Contains Welsh Government LiDAR data © Welsh Government / Llywodraeth Cymru (OGL v3)
+© OpenStreetMap contributors (ODbL)
+Contains OS data © Crown copyright and database right (OGL v3)
+Ground texture drawn from OpenStreetMap, OS Open Map Local and LiDAR data (no aerial photography)

@@ -30,7 +30,10 @@ function bundlesPlugin() {
 
 // The viewer imports the modules by alias (@map, @picker, @builder, @credits, @flow); a game that uses this package sets the
 // same aliases to node_modules/uk-map-3d/modules/<name>/client/index.js. three.js and friends are resolved from the app.
+// BASE_PATH is where a built copy is served from (the GitHub Pages workflow sets /uk-map-3d/). The demo build ships only the
+// drawn-from-open-data Newtown bundle in public/bundles, plus a static index.json; `npm run dev` serves data/bundles instead.
 export default defineConfig({
+  base: process.env.BASE_PATH ?? '/',
   plugins: [bundlesPlugin()],
   resolve: {
     alias: Object.fromEntries(['map', 'picker', 'builder', 'credits', 'flow'].map((m) => [`@${m}`, path.join(modulesDir, m, 'client/index.js')])),
