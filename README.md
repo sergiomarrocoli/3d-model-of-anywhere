@@ -3,15 +3,15 @@
 Pick a box anywhere in the UK and walk around it in 3D. A Python pipeline turns open map data (terrain heights, building
 outlines and heights, and a ground texture) into a small tile bundle, and a three.js client builds the scene from it.
 
-**[Live demo: fly around Newtown, Powys in 3D](https://sergiomarrocoli.github.io/3d-model-of-anywhere/)** (the ground is drawn from open data; picking your own area needs the build service, see "Run it")
+**[Live demo: fly around Llandudno in 3D](https://sergiomarrocoli.github.io/3d-model-of-anywhere/)** (the ground is drawn from open data; picking your own area needs the build service, see "Run it")
 
-![A 1 km square of Newtown, Powys, pulled apart into its four layers: the drawn ground, land cover, building heights from LiDAR, and terrain](docs/layers.jpg)
+![A 2 km square of Llandudno, pulled apart into its four layers: the drawn ground, land cover, building heights from LiDAR, and terrain](docs/layers.jpg)
 
-*One bundle, in layers (the ground here is the stylised one, drawn from open data): what the build step makes and the 3D map reads.*
+*One bundle, in layers (Llandudno, Conwy: the Great Orme, the town, the pier and the bay; the ground is drawn from open data): what the build step makes and the 3D map reads.*
 
-[![The finished 3D map of Newtown, Powys, seen from above the river: terrain, buildings with roofs, trees and roads](docs/demo.jpg)](https://sergiomarrocoli.github.io/3d-model-of-anywhere/)
+[![A fly-through of the finished 3D map of Llandudno: the Great Orme's slopes, the town, the beach and pier, and the sea](docs/llandudno.gif)](https://sergiomarrocoli.github.io/3d-model-of-anywhere/)
 
-*The 3D map built from that bundle. [Click to fly around it live](https://sergiomarrocoli.github.io/3d-model-of-anywhere/) (GitHub cannot embed it here).*
+*The 3D map built from that bundle. [Click to fly around it live](https://sergiomarrocoli.github.io/3d-model-of-anywhere/) (GitHub cannot embed it here). Ground texture drawn from OpenStreetMap, OS Open Map Local and Welsh Government LiDAR; credits below.*
 
 ```mermaid
 flowchart TD
@@ -45,7 +45,7 @@ python3 -m venv .venv && .venv/bin/pip install -r pipeline/requirements.txt
 python3 build_area.py --help            # build an area into data/bundles/
 npm run dev                             # http://localhost:5173/?area=<id>; ?pick chooses and builds one
 python3 modules/builder/server/serve.py # the build service the picker uses
-npm run build:demo                      # a static copy of the viewer with the Newtown bundle in public/bundles (what the Pages workflow publishes)
+npm run build:demo                      # a static copy of the viewer with the Llandudno and Newtown bundles in public/bundles (what the Pages workflow publishes)
 npm test && python3 -m pytest           # JavaScript and Python tests
 ```
 
@@ -136,6 +136,6 @@ The photographic option fetches [Esri World Imagery](https://www.arcgis.com/home
 
 ## Licence
 
-The code is under the [MIT licence](LICENSE). The map data is not covered by it: the Newtown bundle in `public/bundles/` (and the images
+The code is under the [MIT licence](LICENSE). The map data is not covered by it: the Llandudno and Newtown bundles in `public/bundles/` (and the images
 made from it, such as `docs/layers.jpg`) is derived from the sources above, so it keeps their terms: OpenStreetMap's Open Database
 Licence (attribution and share-alike) and the Open Government Licence v3.0, with the credit lines in its `ATTRIBUTION.txt`.
